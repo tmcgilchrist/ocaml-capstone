@@ -27,7 +27,10 @@
            x86
            xcore_const
            xcore)
-  (c_names capstone_stubs
+
+  (foreign_stubs (language c)
+
+  (names capstone_stubs
            cs_const_stubs
            arm64_const_stubs
            arm_const_stubs
@@ -40,8 +43,8 @@
            sysz_const_stubs
            tms320c64x_const_stubs
            x86_const_stubs
-           xcore_const_stubs)
-  (c_flags (-Wall -Wextra))
+           xcore_const_stubs))
+  (flags (-Wall -Wextra))
   (c_library_flags (-lcapstone)))
 
 (rule

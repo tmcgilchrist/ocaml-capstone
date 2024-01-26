@@ -1,0 +1,15 @@
+opam-version: "2.0"
+maintainer: "Tim McGilchrist <timmcgil@gmail.com>"
+authors: [
+  "Nguyen Anh Quynh <aquynh -at- gmail.com>"
+  "Chenxu Wu (kabeor) kabeor@qiling.io"
+]
+homepage: "https://www.capstone-engine.org"
+bug-reports: "https://github.com/ocaml/opam-repository/issues"
+dev-repo: "git+https://github.com/capstone/capstone.git"
+license: "MIT"
+depexts: [
+  ["capstone"] {os-distribution = "homebrew" & os = "macos"}
+]
+synopsis: "Virtual package relying on capstone installation"
+flags: conf

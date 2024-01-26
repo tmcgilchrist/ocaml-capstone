@@ -156,7 +156,7 @@ let caml_hash_variant s =
 (* Standard library extras to avoid extra build dependencies *)
 
 module Option = struct
-  let return v = Some v
+  (* let return v = Some v *)
   let (>>=) v f = match v with None -> None | Some v' -> f v'
   let (>>|) v f = v >>= (fun v' -> Some (f v'))
 
@@ -174,7 +174,7 @@ module List = struct
     else
       xs
 
-  let hd_ex = hd
+  (* let hd_ex = hd *)
   let hd = function [] -> None | x :: _ -> Some x
 
   let rec last_exn = function
