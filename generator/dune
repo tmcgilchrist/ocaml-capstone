@@ -1,0 +1,5 @@
+(executable
+ (name gen)
+ (package capstone)
+ (public_name capstone-gen)
+ (libraries str))

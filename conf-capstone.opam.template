@@ -1,0 +1,9 @@
+flags: conf
+depexts: [
+  ["capstone"] {os-distribution = "homebrew" & os = "macos"}
+  ["libcapstone-dev"] {os-family = "debian"}
+  ["capstone-devel"] {os-family = "fedora"}
+  ["capstone"] {os-family = "arch"}
+  ["capstone-dev"] {os-family = "alpine"}
+  ["capstone"] {os = "freebsd"}
+]

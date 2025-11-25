@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+
+    runs-on: ${{ matrix.os }}
+    name: Linux ${{ matrix.arch }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcapstone-dev pkg-config
+
+      - name: Setup OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.2.x
+
+      - name: Install dependencies
+        run: |
+          opam install . --deps-only --with-test -y
+
+      - name: Build
+        run: |
+          opam exec -- dune build
+
+      - name: Run tests
+        run: |
+          opam exec -- dune test
+
+      - name: Check Capstone version
+        run: |
+          pkg-config --modversion capstone || echo "pkg-config not available for capstone"
+          opam exec -- dune exec -- ocaml -stdin << 'EOF'
+          #use "topfind";;
+          #require "capstone";;
+          let (major, minor) = Capstone.version () in
+          Printf.printf "Capstone version: %d.%d\n" major minor
+          EOF
+
+  macos:
+    runs-on: macos-14
+    name: macOS ARM64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          brew install capstone pkg-config
+
+      - name: Setup OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.2.x
+
+      - name: Install dependencies
+        run: |
+          opam install . --deps-only --with-test -y
+
+      - name: Build
+        run: |
+          opam exec -- dune build
+
+      - name: Run tests
+        run: |
+          opam exec -- dune test
+
+      - name: Check Capstone version
+        run: |
+          pkg-config --modversion capstone || echo "pkg-config not available for capstone"
+          opam exec -- dune exec -- ocaml -stdin << 'EOF'
+          #use "topfind";;
+          #require "capstone";;
+          let (major, minor) = Capstone.version () in
+          Printf.printf "Capstone version: %d.%d\n" major minor
+          EOF
