@@ -19,6 +19,7 @@ module Arch = struct
   let tms320c64x = 9
   let m680x = 10
   let evm = 11
+  let riscv = 15
 end
 
 (* Mode enum values *)
@@ -32,6 +33,10 @@ module Mode = struct
   let mclass = 1 lsl 5
   let v8 = 1 lsl 6
   let big_endian = 1 lsl 31
+  (* RISC-V modes - different from x86! *)
+  let riscv32 = 1 lsl 0  (* CS_MODE_RISCV32 = 1 *)
+  let riscv64 = 1 lsl 1  (* CS_MODE_RISCV64 = 2 *)
+  let riscvc = 1 lsl 2   (* CS_MODE_RISCVC = 4 *)
 end
 
 (* Option types *)

@@ -21,6 +21,7 @@ let headers = [
   (* Capstone 5.x still uses arm64.h naming even though types are aarch64 *)
   { header_name = "arm64.h"; module_prefix = "arm64"; output_prefix = "aarch64" };
   { header_name = "x86.h"; module_prefix = "x86"; output_prefix = "x86" };
+  { header_name = "riscv.h"; module_prefix = "riscv"; output_prefix = "riscv" };
 ]
 
 (* Parsed enum definition *)
@@ -136,52 +137,87 @@ let parse_enum lines ~prefix =
         find_enum_start rest
   in
 
-  let rec parse_variants lines variants current_value =
+  let rec parse_variants lines variants current_value in_comment =
     match lines with
     | [] -> (List.rev variants, [])
     | line :: rest ->
-      let line = trim line in
-      if starts_with "}" line then
-        (* End of enum - extract name if typedef *)
-        (List.rev variants, rest)
-      else if line = "" || starts_with "//" line || starts_with "/*" line then
-        parse_variants rest variants current_value
+      let raw_line = String.trim line in
+      (* Handle multi-line comments - check raw line before trim removes /* *)
+      let in_comment, skip_line =
+        if in_comment then
+          (* Look for end of comment *)
+          let has_end =
+            try
+              let _ = Str.search_forward (Str.regexp_string "*/") raw_line 0 in
+              true
+            with Not_found -> false
+          in
+          if has_end then (false, true) else (true, true)
+        else
+          let has_start =
+            try
+              let _ = Str.search_forward (Str.regexp_string "/*") raw_line 0 in
+              true
+            with Not_found -> false
+          in
+          if has_start then
+            (* Check if comment ends on same line *)
+            let has_end =
+              try
+                let _ = Str.search_forward (Str.regexp_string "*/") raw_line 0 in
+                true
+              with Not_found -> false
+            in
+            if has_end then (false, true) else (true, true)
+          else
+            (false, false)
+      in
+      if skip_line then
+        parse_variants rest variants current_value in_comment
       else begin
-        (* Parse enum entries *)
-        let entries = split_on_comma line in
-        let (variants', value') = List.fold_left (fun (vars, val_) entry ->
-          let entry = trim entry in
-          if entry = "" || starts_with "//" entry then
-            (vars, val_)
-          else begin
-            (* Parse "NAME = VALUE" or just "NAME" *)
-            match String.index_opt entry '=' with
-            | Some i ->
-              let name = trim (String.sub entry 0 i) in
-              let value_str = trim (String.sub entry (i+1) (String.length entry - i - 1)) in
-              let value = parse_value_expr value_str val_ in
-              if should_skip name then
-                (vars, Int64.succ value)
-              else
-                let variant = to_variant_name ~prefix name in
-                ((variant, value) :: vars, Int64.succ value)
-            | None ->
-              let name = entry in
-              if should_skip name then
-                (vars, Int64.succ val_)
-              else
-                let variant = to_variant_name ~prefix name in
-                ((variant, val_) :: vars, Int64.succ val_)
-          end
-        ) (variants, current_value) entries in
-        parse_variants rest variants' value'
+        let line = trim raw_line in
+        if starts_with "}" line then
+          (* End of enum - extract name if typedef *)
+          (List.rev variants, rest)
+        else if line = "" || starts_with "//" line then
+          parse_variants rest variants current_value in_comment
+        else begin
+          (* Parse enum entries *)
+          let entries = split_on_comma line in
+          let (variants', value') = List.fold_left (fun (vars, val_) entry ->
+            let entry = trim entry in
+            if entry = "" || starts_with "//" entry then
+              (vars, val_)
+            else begin
+              (* Parse "NAME = VALUE" or just "NAME" *)
+              match String.index_opt entry '=' with
+              | Some i ->
+                let name = trim (String.sub entry 0 i) in
+                let value_str = trim (String.sub entry (i+1) (String.length entry - i - 1)) in
+                let value = parse_value_expr value_str val_ in
+                if should_skip name then
+                  (vars, Int64.succ value)
+                else
+                  let variant = to_variant_name ~prefix name in
+                  ((variant, value) :: vars, Int64.succ value)
+              | None ->
+                let name = entry in
+                if should_skip name then
+                  (vars, Int64.succ val_)
+                else
+                  let variant = to_variant_name ~prefix name in
+                  ((variant, val_) :: vars, Int64.succ val_)
+            end
+          ) (variants, current_value) entries in
+          parse_variants rest variants' value' in_comment
+        end
       end
   in
 
   match find_enum_start lines with
   | None -> None
   | Some (name, rest) ->
-    let (variants, remaining) = parse_variants rest [] 0L in
+    let (variants, remaining) = parse_variants rest [] 0L false in
     Some ({ name; variants = List.rev variants }, remaining)
 
 (* Parse all enums from a header file *)

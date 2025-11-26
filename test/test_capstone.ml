@@ -188,6 +188,70 @@ let test_x86_64_detail_mem () =
        check int64 "displacement" 0x10L m.disp
      | _ -> fail "Expected memory operand")
 
+let test_riscv64_basic () =
+  (* addi x1, x2, 5 (RV64I): 0x00510093
+     In little endian bytes: 93 00 51 00 *)
+  let code = Bytes.of_string "\x93\x00\x51\x00" in
+  match Capstone.create Capstone.Arch.RISCV64 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    let insns = Capstone.disasm ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "addi" insn.mnemonic;
+    check int "size" 4 insn.size
+
+let test_riscv64_detail () =
+  (* addi x1, x2, 5 (RV64I): 0x00510093
+     In little endian bytes: 93 00 51 00 *)
+  let code = Bytes.of_string "\x93\x00\x51\x00" in
+  match Capstone.create Capstone.Arch.RISCV64 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_riscv_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "addi" insn.insn.mnemonic;
+    (* addi x1, x2, 5 should have 3 operands: 2 regs and 1 imm *)
+    check int "operand count" 3 (Array.length insn.arch_detail.operands);
+    (* First operand should be a register *)
+    (match insn.arch_detail.operands.(0).value with
+     | Capstone.Riscv.Reg _ -> ()
+     | _ -> fail "Expected register operand");
+    (* Third operand should be immediate *)
+    (match insn.arch_detail.operands.(2).value with
+     | Capstone.Riscv.Imm imm ->
+       check int64 "immediate value" 5L imm
+     | _ -> fail "Expected immediate operand")
+
+let test_riscv64_detail_mem () =
+  (* ld x3, 8(x4) : 0x00843183
+     In little endian bytes: 83 31 84 00 *)
+  let code = Bytes.of_string "\x83\x31\x84\x00" in
+  match Capstone.create Capstone.Arch.RISCV64 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_riscv_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "ld" insn.insn.mnemonic;
+    (* ld x3, 8(x4) should have 2 operands: reg and mem *)
+    check int "operand count" 2 (Array.length insn.arch_detail.operands);
+    (* Second operand should be memory *)
+    (match insn.arch_detail.operands.(1).value with
+     | Capstone.Riscv.Mem m ->
+       check bool "has base register" true (m.base <> 0);
+       check int64 "displacement" 8L m.disp
+     | _ -> fail "Expected memory operand")
+
 let () =
   run "Capstone" [
     "version", [
@@ -204,6 +268,11 @@ let () =
       test_case "mov instruction" `Quick test_x86_64_mov;
       test_case "detailed reg operands" `Quick test_x86_64_detail;
       test_case "detailed mem operands" `Quick test_x86_64_detail_mem;
+    ];
+    "riscv64", [
+      test_case "basic disasm" `Quick test_riscv64_basic;
+      test_case "detailed reg/imm operands" `Quick test_riscv64_detail;
+      test_case "detailed mem operands" `Quick test_riscv64_detail_mem;
     ];
     "convenience", [
       test_case "with_handle" `Quick test_with_handle;
