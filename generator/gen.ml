@@ -22,6 +22,7 @@ let headers = [
   { header_name = "arm64.h"; module_prefix = "arm64"; output_prefix = "aarch64" };
   { header_name = "x86.h"; module_prefix = "x86"; output_prefix = "x86" };
   { header_name = "riscv.h"; module_prefix = "riscv"; output_prefix = "riscv" };
+  { header_name = "ppc.h"; module_prefix = "ppc"; output_prefix = "ppc" };
 ]
 
 (* Parsed enum definition *)

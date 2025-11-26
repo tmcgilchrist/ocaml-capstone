@@ -2,7 +2,7 @@
  (name capstone)
  (public_name capstone)
  (libraries capstone_ffi ctypes)
- (modules capstone aarch64 x86 riscv cs_const aarch64_const x86_const riscv_const))
+ (modules capstone aarch64 x86 riscv ppc cs_const aarch64_const x86_const riscv_const ppc_const))
 
 (rule
  (targets c_flags.sexp c_library_flags.sexp)
@@ -11,6 +11,6 @@
 
 ; Generate constants using the new generator
 (rule
- (targets cs_const.ml aarch64_const.ml x86_const.ml riscv_const.ml)
+ (targets cs_const.ml aarch64_const.ml x86_const.ml riscv_const.ml ppc_const.ml)
  (deps (:gen ../generator/gen.exe))
  (action (run %{gen} .)))

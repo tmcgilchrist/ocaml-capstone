@@ -37,6 +37,9 @@ module Mode = struct
   let riscv32 = 1 lsl 0  (* CS_MODE_RISCV32 = 1 *)
   let riscv64 = 1 lsl 1  (* CS_MODE_RISCV64 = 2 *)
   let riscvc = 1 lsl 2   (* CS_MODE_RISCVC = 4 *)
+  (* Power modes - same as generic 32/64 *)
+  let ppc32 = 1 lsl 2    (* CS_MODE_32 = 4 *)
+  let ppc64 = 1 lsl 3    (* CS_MODE_64 = 8 *)
 end
 
 (* Option types *)

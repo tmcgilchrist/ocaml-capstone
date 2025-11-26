@@ -252,6 +252,67 @@ let test_riscv64_detail_mem () =
        check int64 "displacement" 8L m.disp
      | _ -> fail "Expected memory operand")
 
+let test_ppc64_basic () =
+  (* li r3, 5 (addi r3, 0, 5) - Big endian: 0x38600005 *)
+  let code = Bytes.of_string "\x38\x60\x00\x05" in
+  match Capstone.create Capstone.Arch.PPC64 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    let insns = Capstone.disasm ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "li" insn.mnemonic;
+    check int "size" 4 insn.size
+
+let test_ppc64_detail () =
+  (* li r3, 5 (addi r3, 0, 5) - Big endian: 0x38600005 *)
+  let code = Bytes.of_string "\x38\x60\x00\x05" in
+  match Capstone.create Capstone.Arch.PPC64 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_ppc_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "li" insn.insn.mnemonic;
+    (* li r3, 5 should have 2 operands: reg and imm *)
+    check int "operand count" 2 (Array.length insn.arch_detail.operands);
+    (* First operand should be a register *)
+    (match insn.arch_detail.operands.(0).value with
+     | Capstone.Ppc.Reg _ -> ()
+     | _ -> fail "Expected register operand");
+    (* Second operand should be immediate *)
+    (match insn.arch_detail.operands.(1).value with
+     | Capstone.Ppc.Imm imm ->
+       check int64 "immediate value" 5L imm
+     | _ -> fail "Expected immediate operand")
+
+let test_ppc64_detail_mem () =
+  (* lwz r3, 8(r4) - Big endian: 0x80640008 *)
+  let code = Bytes.of_string "\x80\x64\x00\x08" in
+  match Capstone.create Capstone.Arch.PPC64 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_ppc_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "lwz" insn.insn.mnemonic;
+    (* lwz r3, 8(r4) should have 2 operands: reg and mem *)
+    check int "operand count" 2 (Array.length insn.arch_detail.operands);
+    (* Second operand should be memory *)
+    (match insn.arch_detail.operands.(1).value with
+     | Capstone.Ppc.Mem m ->
+       check bool "has base register" true (m.base <> 0);
+       check int32 "displacement" 8l m.disp
+     | _ -> fail "Expected memory operand")
+
 let () =
   run "Capstone" [
     "version", [
@@ -273,6 +334,11 @@ let () =
       test_case "basic disasm" `Quick test_riscv64_basic;
       test_case "detailed reg/imm operands" `Quick test_riscv64_detail;
       test_case "detailed mem operands" `Quick test_riscv64_detail_mem;
+    ];
+    "ppc64", [
+      test_case "basic disasm" `Quick test_ppc64_basic;
+      test_case "detailed reg/imm operands" `Quick test_ppc64_detail;
+      test_case "detailed mem operands" `Quick test_ppc64_detail_mem;
     ];
     "convenience", [
       test_case "with_handle" `Quick test_with_handle;
