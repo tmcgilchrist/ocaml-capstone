@@ -12,10 +12,12 @@ module Aarch64_const = Aarch64_const
 module X86_const = X86_const
 module Riscv_const = Riscv_const
 module Ppc_const = Ppc_const
+module Sysz_const = Sysz_const
 module Aarch64 = Aarch64
 module X86 = X86
 module Riscv = Riscv
 module Ppc = Ppc
+module Sysz = Sysz
 
 (* Error type *)
 type error =
@@ -94,6 +96,7 @@ module Arch = struct
     | PPC32 : [> `PPC32 ] t
     | PPC64 : [> `PPC64 ] t
     | PPC64LE : [> `PPC64LE ] t
+    | SYSZ : [> `SYSZ ] t
 
   let to_arch_mode : type a. a t -> int * int = function
     | AARCH64 -> (Types.Arch.aarch64, Types.Mode.little_endian)
@@ -105,6 +108,7 @@ module Arch = struct
     | PPC32 -> (Types.Arch.ppc, Types.Mode.ppc32 lor Types.Mode.big_endian)
     | PPC64 -> (Types.Arch.ppc, Types.Mode.ppc64 lor Types.Mode.big_endian)
     | PPC64LE -> (Types.Arch.ppc, Types.Mode.ppc64)
+    | SYSZ -> (Types.Arch.sysz, Types.Mode.big_endian)
 end
 
 (* Disassembler type with phantom type for architecture *)
@@ -495,6 +499,65 @@ let disasm_ppc_detail ?(count=0) ~addr (handle : [> `PPC32 | `PPC64 | `PPC64LE] 
     let insns_array = !@ insn_ptr in
     let result = List.init num (fun i ->
       detailed_insn_of_cs_insn_ppc (insns_array +@ i)
+    ) in
+    Bindings.cs_free insns_array num_insns;
+    result
+  end
+
+(* Convert cs_insn to detailed instruction for SystemZ *)
+let detailed_insn_of_cs_insn_sysz ptr =
+  let basic = insn_of_cs_insn ptr in
+  let detail_opt = getf (!@ ptr) Types.insn_detail in
+  match detail_opt with
+  | None ->
+    (* No detail available - return empty arrays *)
+    {
+      insn = basic;
+      regs_read = [||];
+      regs_write = [||];
+      groups = [||];
+      arch_detail = {
+        Sysz.cc = 0;
+        operands = [||];
+      };
+    }
+  | Some detail_ptr ->
+    let common = Sysz.common_detail_of_cs_detail detail_ptr in
+    let arch_detail = Sysz.detail_of_cs_detail detail_ptr in
+    {
+      insn = basic;
+      regs_read = common.regs_read;
+      regs_write = common.regs_write;
+      groups = common.groups;
+      arch_detail;
+    }
+
+(* Disassemble with detailed information (SystemZ) *)
+let disasm_sysz_detail ?(count=0) ~addr (handle : [> `SYSZ] t) (code : bytes)
+    : Sysz.detail detailed_insn list =
+  let code_len = Bytes.length code in
+  let code_ptr = allocate_n uint8_t ~count:code_len in
+  for i = 0 to code_len - 1 do
+    (code_ptr +@ i) <-@ Unsigned.UInt8.of_int (Char.code (Bytes.get code i))
+  done;
+
+  let insn_ptr = allocate (ptr Types.cs_insn) (from_voidp Types.cs_insn null) in
+  let num_insns = Bindings.cs_disasm
+    handle.h
+    code_ptr
+    (Unsigned.Size_t.of_int code_len)
+    (Unsigned.UInt64.of_int64 addr)
+    (Unsigned.Size_t.of_int count)
+    insn_ptr
+  in
+
+  let num = Unsigned.Size_t.to_int num_insns in
+  if num = 0 then
+    []
+  else begin
+    let insns_array = !@ insn_ptr in
+    let result = List.init num (fun i ->
+      detailed_insn_of_cs_insn_sysz (insns_array +@ i)
     ) in
     Bindings.cs_free insns_array num_insns;
     result

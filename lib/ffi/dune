@@ -1,6 +1,6 @@
 (library
  (name capstone_ffi)
  (public_name capstone.ffi)
- (modules types bindings aarch64_types x86_types riscv_types ppc_types)
+ (modules types bindings aarch64_types x86_types riscv_types ppc_types sysz_types)
  (libraries ctypes ctypes-foreign)
  (c_library_flags (:include ../c_library_flags.sexp)))

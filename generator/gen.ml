@@ -23,6 +23,7 @@ let headers = [
   { header_name = "x86.h"; module_prefix = "x86"; output_prefix = "x86" };
   { header_name = "riscv.h"; module_prefix = "riscv"; output_prefix = "riscv" };
   { header_name = "ppc.h"; module_prefix = "ppc"; output_prefix = "ppc" };
+  { header_name = "systemz.h"; module_prefix = "sysz"; output_prefix = "sysz" };
 ]
 
 (* Parsed enum definition *)
