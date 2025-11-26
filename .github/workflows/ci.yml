@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install system dependencies
         run: |
@@ -62,7 +62,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install system dependencies
         run: |
@@ -87,7 +87,7 @@ jobs:
 
       - name: Check Capstone version
         run: |
-          pkg-config --modversion capstone || echo "pkg-config not available for capstone"
+          # pkg-config --modversion capstone || echo "pkg-config not available for capstone"
           opam exec -- dune exec -- ocaml -stdin << 'EOF'
           #use "topfind";;
           #require "capstone";;
