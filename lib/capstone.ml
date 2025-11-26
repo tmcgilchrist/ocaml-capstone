@@ -11,6 +11,7 @@ module Cs_const = Cs_const
 module Aarch64_const = Aarch64_const
 module X86_const = X86_const
 module Aarch64 = Aarch64
+module X86 = X86
 
 (* Error type *)
 type error =
@@ -286,6 +287,80 @@ let disasm_aarch64_detail ?(count=0) ~addr (handle : [> `AARCH64] t) (code : byt
     let insns_array = !@ insn_ptr in
     let result = List.init num (fun i ->
       detailed_insn_of_cs_insn_aarch64 (insns_array +@ i)
+    ) in
+    Bindings.cs_free insns_array num_insns;
+    result
+  end
+
+(* Convert cs_insn to detailed instruction for x86 *)
+let detailed_insn_of_cs_insn_x86 ptr =
+  let basic = insn_of_cs_insn ptr in
+  let detail_opt = getf (!@ ptr) Types.insn_detail in
+  match detail_opt with
+  | None ->
+    (* No detail available - return empty arrays *)
+    {
+      insn = basic;
+      regs_read = [||];
+      regs_write = [||];
+      groups = [||];
+      arch_detail = {
+        X86.prefix = [|0;0;0;0|];
+        opcode = [|0;0;0;0|];
+        rex = 0;
+        addr_size = 0;
+        modrm = 0;
+        sib = 0;
+        disp = 0L;
+        sib_index = 0;
+        sib_scale = 0;
+        sib_base = 0;
+        xop_cc = 0;
+        sse_cc = 0;
+        avx_cc = 0;
+        avx_sae = false;
+        avx_rm = 0;
+        eflags = 0L;
+        operands = [||];
+      };
+    }
+  | Some detail_ptr ->
+    let common = X86.common_detail_of_cs_detail detail_ptr in
+    let arch_detail = X86.detail_of_cs_detail detail_ptr in
+    {
+      insn = basic;
+      regs_read = common.regs_read;
+      regs_write = common.regs_write;
+      groups = common.groups;
+      arch_detail;
+    }
+
+(* Disassemble with detailed information (x86) *)
+let disasm_x86_detail ?(count=0) ~addr (handle : [> `X86_16 | `X86_32 | `X86_64] t) (code : bytes)
+    : X86.detail detailed_insn list =
+  let code_len = Bytes.length code in
+  let code_ptr = allocate_n uint8_t ~count:code_len in
+  for i = 0 to code_len - 1 do
+    (code_ptr +@ i) <-@ Unsigned.UInt8.of_int (Char.code (Bytes.get code i))
+  done;
+
+  let insn_ptr = allocate (ptr Types.cs_insn) (from_voidp Types.cs_insn null) in
+  let num_insns = Bindings.cs_disasm
+    handle.h
+    code_ptr
+    (Unsigned.Size_t.of_int code_len)
+    (Unsigned.UInt64.of_int64 addr)
+    (Unsigned.Size_t.of_int count)
+    insn_ptr
+  in
+
+  let num = Unsigned.Size_t.to_int num_insns in
+  if num = 0 then
+    []
+  else begin
+    let insns_array = !@ insn_ptr in
+    let result = List.init num (fun i ->
+      detailed_insn_of_cs_insn_x86 (insns_array +@ i)
     ) in
     Bindings.cs_free insns_array num_insns;
     result
