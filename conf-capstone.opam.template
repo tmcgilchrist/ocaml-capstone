@@ -2,6 +2,9 @@ flags: conf
 build: [
   ["pkg-config" "--atleast-version=5.0" "capstone"]
 ]
+post-messages: [
+  "This package requires Capstone >= 5.0. Ubuntu 24.04 and earlier ship with Capstone 4.x. You may need to build Capstone 5.x from source: https://github.com/capstone-engine/capstone" {failure}
+]
 depexts: [
   ["capstone"] {os-distribution = "homebrew" & os = "macos"}
   ["libcapstone-dev"] {os-family = "debian"}

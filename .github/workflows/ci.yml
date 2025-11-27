@@ -37,10 +37,6 @@ jobs:
           sudo make install
           sudo ldconfig
 
-      - name: Check Capstone version
-        run: |
-          pkg-config --modversion capstone
-
       - name: Setup OCaml
         uses: ocaml/setup-ocaml@v3
         with:
@@ -48,7 +44,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          opam install . --deps-only --with-test -y
+          # Use --no-depexts to prevent opam from installing libcapstone-dev (4.x)
+          # which would overwrite our manually installed Capstone 5.x
+          opam install . --deps-only --with-test --no-depexts -y
+
+      - name: Check Capstone version
+        run: |
+          pkg-config --modversion capstone
 
       - name: Build
         run: |
