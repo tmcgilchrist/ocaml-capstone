@@ -1,8 +1,9 @@
-(lang dune 3.0)
+(lang dune 3.18)
 (formatting (enabled_for dune))
 (name capstone)
 (generate_opam_files true)
 (version 0.1.0)
+(using ctypes 0.3)
 
 (maintainers "Tim McGilchrist <timmcgil@gmail.com>")
 (authors

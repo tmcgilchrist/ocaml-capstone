@@ -15,10 +15,11 @@ license: "MIT"
 homepage: "https://github.com/tmcgilchrist/capstone-ocaml"
 bug-reports: "https://github.com/tmcgilchrist/capstone-ocaml/issues"
 depends: [
-  "dune" {>= "3.0"}
+  "dune" {>= "3.18"}
   "odoc" {with-doc}
 ]
 dev-repo: "git+https://github.com/tmcgilchrist/capstone-ocaml.git"
+x-maintenance-intent: ["(latest)"]
 flags: conf
 build: [
   ["pkg-config" "--atleast-version=5.0" "capstone"]
