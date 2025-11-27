@@ -37,6 +37,10 @@ jobs:
           sudo make install
           sudo ldconfig
 
+      - name: Check Capstone version
+        run: |
+          pkg-config --modversion capstone
+
       - name: Setup OCaml
         uses: ocaml/setup-ocaml@v3
         with:
@@ -53,10 +57,6 @@ jobs:
       - name: Run tests
         run: |
           opam exec -- dune test
-
-      - name: Check Capstone version
-        run: |
-          pkg-config --modversion capstone
 
   macos:
     runs-on: macos-14
