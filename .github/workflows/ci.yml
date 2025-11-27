@@ -27,7 +27,15 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcapstone-dev pkg-config
+          sudo apt-get install -y pkg-config cmake
+          # Build Capstone 5.x from source (Ubuntu 24.04 packages only have 4.x)
+          git clone --depth 1 --branch 5.0.6 https://github.com/capstone-engine/capstone.git /tmp/capstone
+          cd /tmp/capstone
+          mkdir build && cd build
+          cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
 
       - name: Setup OCaml
         uses: ocaml/setup-ocaml@v3
@@ -48,13 +56,7 @@ jobs:
 
       - name: Check Capstone version
         run: |
-          pkg-config --modversion capstone || echo "pkg-config not available for capstone"
-          opam exec -- dune exec -- ocaml -stdin << 'EOF'
-          #use "topfind";;
-          #require "capstone";;
-          let (major, minor) = Capstone.version () in
-          Printf.printf "Capstone version: %d.%d\n" major minor
-          EOF
+          pkg-config --modversion capstone
 
   macos:
     runs-on: macos-14
@@ -87,10 +89,4 @@ jobs:
 
       - name: Check Capstone version
         run: |
-          # pkg-config --modversion capstone || echo "pkg-config not available for capstone"
-          opam exec -- dune exec -- ocaml -stdin << 'EOF'
-          #use "topfind";;
-          #require "capstone";;
-          let (major, minor) = Capstone.version () in
-          Printf.printf "Capstone version: %d.%d\n" major minor
-          EOF
+          pkg-config --modversion capstone

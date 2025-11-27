@@ -31,6 +31,7 @@
 (package
  (name conf-capstone)
  (allow_empty)
- (synopsis "Virtual package relying on Capstone installation")
+ (synopsis "Virtual package relying on Capstone 5.x installation")
  (description
-  "This package ensures the Capstone disassembly library (libcapstone) is installed on the system."))
+  "This package ensures the Capstone disassembly library (libcapstone) version 5.0 or later is installed on the system. Capstone 5.x is required for RISC-V, Power, and SystemZ architecture support."))
+

@@ -1,4 +1,7 @@
 flags: conf
+build: [
+  ["pkg-config" "--atleast-version=5.0" "capstone"]
+]
 depexts: [
   ["capstone"] {os-distribution = "homebrew" & os = "macos"}
   ["libcapstone-dev"] {os-family = "debian"}
