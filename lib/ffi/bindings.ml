@@ -3,6 +3,13 @@
 open Ctypes
 open Foreign
 
+(* Force linking with libcapstone on Linux.
+   This stub calls cs_version which forces the linker to include
+   libcapstone even with --as-needed. Without this, dlsym(RTLD_DEFAULT, ...)
+   fails because the library symbols aren't loaded. *)
+external force_link : unit -> unit = "capstone_force_link"
+let () = force_link ()
+
 (* Core API functions *)
 
 let cs_version =
