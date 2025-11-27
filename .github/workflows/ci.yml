@@ -32,7 +32,7 @@ jobs:
           git clone --depth 1 --branch 5.0.6 https://github.com/capstone-engine/capstone.git /tmp/capstone
           cd /tmp/capstone
           mkdir build && cd build
-          cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+          cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_SHARED_LIBS=ON
           make -j$(nproc)
           sudo make install
           sudo ldconfig
