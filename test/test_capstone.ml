@@ -372,6 +372,40 @@ let test_sysz_detail_mem () =
        check int64 "displacement" 8L m.disp
      | _ -> fail "Expected memory operand")
 
+let test_regs_access () =
+  (* mov rax, rbx: 48 89 d8 - reads rbx, writes rax *)
+  let code = Bytes.of_string "\x48\x89\xd8" in
+  match Capstone.create Capstone.Arch.X86_64 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let results = Capstone.disasm_with_regs_access ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length results);
+    let (insn, regs) = List.hd results in
+    check string "mnemonic" "mov" insn.mnemonic;
+    (* mov rax, rbx should read rbx and write rax *)
+    check bool "has regs_read" true (Array.length regs.regs_read > 0);
+    check bool "has regs_write" true (Array.length regs.regs_write > 0)
+
+let test_regs_access_aarch64 () =
+  (* add x0, x1, x2 : 0x20, 0x00, 0x02, 0x8b - reads x1, x2, writes x0 *)
+  let code = Bytes.of_string "\x20\x00\x02\x8b" in
+  match Capstone.create Capstone.Arch.AARCH64 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let results = Capstone.disasm_with_regs_access ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length results);
+    let (insn, regs) = List.hd results in
+    check string "mnemonic" "add" insn.mnemonic;
+    (* add x0, x1, x2 should read x1, x2 and write x0 *)
+    check bool "has regs_read" true (Array.length regs.regs_read > 0);
+    check bool "has regs_write" true (Array.length regs.regs_write > 0)
+
 let () =
   run "Capstone" [
     "version", [
@@ -408,5 +442,7 @@ let () =
       test_case "with_handle" `Quick test_with_handle;
       test_case "disassemble_block" `Quick test_disassemble_block;
       test_case "reg_name" `Quick test_reg_name;
+      test_case "regs_access x86_64" `Quick test_regs_access;
+      test_case "regs_access aarch64" `Quick test_regs_access_aarch64;
     ];
   ]

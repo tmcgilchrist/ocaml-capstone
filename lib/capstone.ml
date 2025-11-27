@@ -562,3 +562,73 @@ let disasm_sysz_detail ?(count=0) ~addr (handle : [> `SYSZ] t) (code : bytes)
     Bindings.cs_free insns_array num_insns;
     result
   end
+
+(* Get all registers accessed by an instruction (both explicit and implicit) *)
+type regs_access = {
+  regs_read : int array;
+  regs_write : int array;
+}
+
+(* Low-level function that takes a raw cs_insn pointer *)
+let regs_access_raw (handle : _ t) insn_ptr : (regs_access, error) result =
+  let regs_read = CArray.make Ctypes.uint16_t 64 in
+  let regs_write = CArray.make Ctypes.uint16_t 64 in
+  let read_count = allocate uint8_t (Unsigned.UInt8.of_int 0) in
+  let write_count = allocate uint8_t (Unsigned.UInt8.of_int 0) in
+  let err = Bindings.cs_regs_access
+    handle.h
+    insn_ptr
+    (CArray.start regs_read)
+    read_count
+    (CArray.start regs_write)
+    write_count
+  in
+  if err = Types.Err.ok then begin
+    let read_n = Unsigned.UInt8.to_int (!@ read_count) in
+    let write_n = Unsigned.UInt8.to_int (!@ write_count) in
+    let regs_read_arr = Array.init read_n (fun i ->
+      Unsigned.UInt16.to_int (CArray.get regs_read i)
+    ) in
+    let regs_write_arr = Array.init write_n (fun i ->
+      Unsigned.UInt16.to_int (CArray.get regs_write i)
+    ) in
+    Result.Ok { regs_read = regs_read_arr; regs_write = regs_write_arr }
+  end else
+    Result.Error (error_of_int err)
+
+(* Disassemble and get register access for each instruction *)
+let disasm_with_regs_access ?(count=0) ~addr (handle : _ t) (code : bytes)
+    : (insn * regs_access) list =
+  let code_len = Bytes.length code in
+  let code_ptr = allocate_n uint8_t ~count:code_len in
+  for i = 0 to code_len - 1 do
+    (code_ptr +@ i) <-@ Unsigned.UInt8.of_int (Char.code (Bytes.get code i))
+  done;
+
+  let insn_ptr = allocate (ptr Types.cs_insn) (from_voidp Types.cs_insn null) in
+  let num_insns = Bindings.cs_disasm
+    handle.h
+    code_ptr
+    (Unsigned.Size_t.of_int code_len)
+    (Unsigned.UInt64.of_int64 addr)
+    (Unsigned.Size_t.of_int count)
+    insn_ptr
+  in
+
+  let num = Unsigned.Size_t.to_int num_insns in
+  if num = 0 then
+    []
+  else begin
+    let insns_array = !@ insn_ptr in
+    let result = List.init num (fun i ->
+      let ptr = insns_array +@ i in
+      let basic = insn_of_cs_insn ptr in
+      let regs = match regs_access_raw handle ptr with
+        | Result.Ok r -> r
+        | Result.Error _ -> { regs_read = [||]; regs_write = [||] }
+      in
+      (basic, regs)
+    ) in
+    Bindings.cs_free insns_array num_insns;
+    result
+  end

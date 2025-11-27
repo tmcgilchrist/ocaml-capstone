@@ -101,3 +101,14 @@ let cs_op_count =
 let cs_op_index =
   foreign "cs_op_index"
     (size_t @-> ptr Types.cs_insn @-> uint @-> uint @-> returning int)
+
+(* cs_regs is uint16_t[64], passed as pointer *)
+let cs_regs_access =
+  foreign "cs_regs_access"
+    (size_t @->                         (* handle *)
+     ptr Types.cs_insn @->              (* insn *)
+     ptr uint16_t @->                   (* regs_read *)
+     ptr uint8_t @->                    (* regs_read_count *)
+     ptr uint16_t @->                   (* regs_write *)
+     ptr uint8_t @->                    (* regs_write_count *)
+     returning int)
