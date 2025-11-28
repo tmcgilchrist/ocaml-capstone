@@ -20,6 +20,7 @@ let headers = [
   { header_name = "capstone.h"; module_prefix = "cs"; output_prefix = "cs" };
   (* Capstone 5.x still uses arm64.h naming even though types are aarch64 *)
   { header_name = "arm64.h"; module_prefix = "arm64"; output_prefix = "aarch64" };
+  { header_name = "arm.h"; module_prefix = "arm"; output_prefix = "arm" };
   { header_name = "x86.h"; module_prefix = "x86"; output_prefix = "x86" };
   { header_name = "riscv.h"; module_prefix = "riscv"; output_prefix = "riscv" };
   { header_name = "ppc.h"; module_prefix = "ppc"; output_prefix = "ppc" };

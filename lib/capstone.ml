@@ -9,11 +9,13 @@ module Bindings = Ffi.Bindings
 (* Re-export constants and architecture modules *)
 module Cs_const = Cs_const
 module Aarch64_const = Aarch64_const
+module Arm_const = Arm_const
 module X86_const = X86_const
 module Riscv_const = Riscv_const
 module Ppc_const = Ppc_const
 module Sysz_const = Sysz_const
 module Aarch64 = Aarch64
+module Arm = Arm
 module X86 = X86
 module Riscv = Riscv
 module Ppc = Ppc
@@ -88,6 +90,12 @@ type handle = {
 module Arch = struct
   type 'a t =
     | AARCH64 : [> `AARCH64 ] t
+    | ARM : [> `ARM ] t
+    | ARM_BE : [> `ARM_BE ] t
+    | THUMB : [> `THUMB ] t
+    | THUMB_BE : [> `THUMB_BE ] t
+    | THUMB_MCLASS : [> `THUMB_MCLASS ] t
+    | ARMV8 : [> `ARMV8 ] t
     | X86_16 : [> `X86_16 ] t
     | X86_32 : [> `X86_32 ] t
     | X86_64 : [> `X86_64 ] t
@@ -100,6 +108,12 @@ module Arch = struct
 
   let to_arch_mode : type a. a t -> int * int = function
     | AARCH64 -> (Types.Arch.aarch64, Types.Mode.little_endian)
+    | ARM -> (Types.Arch.arm, Types.Mode.arm)
+    | ARM_BE -> (Types.Arch.arm, Types.Mode.arm lor Types.Mode.big_endian)
+    | THUMB -> (Types.Arch.arm, Types.Mode.thumb)
+    | THUMB_BE -> (Types.Arch.arm, Types.Mode.thumb lor Types.Mode.big_endian)
+    | THUMB_MCLASS -> (Types.Arch.arm, Types.Mode.thumb lor Types.Mode.mclass)
+    | ARMV8 -> (Types.Arch.arm, Types.Mode.arm lor Types.Mode.v8)
     | X86_16 -> (Types.Arch.x86, Types.Mode.mode_16)
     | X86_32 -> (Types.Arch.x86, Types.Mode.mode_32)
     | X86_64 -> (Types.Arch.x86, Types.Mode.mode_64)
@@ -558,6 +572,74 @@ let disasm_sysz_detail ?(count=0) ~addr (handle : [> `SYSZ] t) (code : bytes)
     let insns_array = !@ insn_ptr in
     let result = List.init num (fun i ->
       detailed_insn_of_cs_insn_sysz (insns_array +@ i)
+    ) in
+    Bindings.cs_free insns_array num_insns;
+    result
+  end
+
+(* Convert cs_insn to detailed instruction for ARM *)
+let detailed_insn_of_cs_insn_arm ptr =
+  let basic = insn_of_cs_insn ptr in
+  let detail_opt = getf (!@ ptr) Types.insn_detail in
+  match detail_opt with
+  | None ->
+    (* No detail available - return empty arrays *)
+    {
+      insn = basic;
+      regs_read = [||];
+      regs_write = [||];
+      groups = [||];
+      arch_detail = {
+        Arm.usermode = false;
+        vector_size = 0;
+        vector_data = 0;
+        cps_mode = 0;
+        cps_flag = 0;
+        cc = 0;
+        update_flags = false;
+        writeback = false;
+        post_index = false;
+        mem_barrier = 0;
+        operands = [||];
+      };
+    }
+  | Some detail_ptr ->
+    let common = Arm.common_detail_of_cs_detail detail_ptr in
+    let arch_detail = Arm.detail_of_cs_detail detail_ptr in
+    {
+      insn = basic;
+      regs_read = common.regs_read;
+      regs_write = common.regs_write;
+      groups = common.groups;
+      arch_detail;
+    }
+
+(* Disassemble with detailed information (ARM 32-bit) *)
+let disasm_arm_detail ?(count=0) ~addr (handle : [> `ARM | `ARM_BE | `THUMB | `THUMB_BE | `THUMB_MCLASS | `ARMV8] t) (code : bytes)
+    : Arm.detail detailed_insn list =
+  let code_len = Bytes.length code in
+  let code_ptr = allocate_n uint8_t ~count:code_len in
+  for i = 0 to code_len - 1 do
+    (code_ptr +@ i) <-@ Unsigned.UInt8.of_int (Char.code (Bytes.get code i))
+  done;
+
+  let insn_ptr = allocate (ptr Types.cs_insn) (from_voidp Types.cs_insn null) in
+  let num_insns = Bindings.cs_disasm
+    handle.h
+    code_ptr
+    (Unsigned.Size_t.of_int code_len)
+    (Unsigned.UInt64.of_int64 addr)
+    (Unsigned.Size_t.of_int count)
+    insn_ptr
+  in
+
+  let num = Unsigned.Size_t.to_int num_insns in
+  if num = 0 then
+    []
+  else begin
+    let insns_array = !@ insn_ptr in
+    let result = List.init num (fun i ->
+      detailed_insn_of_cs_insn_arm (insns_array +@ i)
     ) in
     Bindings.cs_free insns_array num_insns;
     result

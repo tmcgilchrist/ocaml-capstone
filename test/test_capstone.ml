@@ -406,6 +406,77 @@ let test_regs_access_aarch64 () =
     check bool "has regs_read" true (Array.length regs.regs_read > 0);
     check bool "has regs_write" true (Array.length regs.regs_write > 0)
 
+(* ARM 32-bit tests *)
+let test_arm_basic () =
+  (* nop (mov r0, r0) in ARM mode: 0x00, 0x00, 0xa0, 0xe1 (little endian) *)
+  let code = Bytes.of_string "\x00\x00\xa0\xe1" in
+  match Capstone.create Capstone.Arch.ARM with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    let insns = Capstone.disasm ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "mov" insn.mnemonic;
+    check int "size" 4 insn.size
+
+let test_arm_detail () =
+  (* add r0, r1, r2 in ARM mode: 0x02, 0x00, 0x81, 0xe0 (little endian) *)
+  let code = Bytes.of_string "\x02\x00\x81\xe0" in
+  match Capstone.create Capstone.Arch.ARM with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_arm_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "add" insn.insn.mnemonic;
+    (* add r0, r1, r2 should have 3 operands *)
+    check int "operand count" 3 (Array.length insn.arch_detail.operands);
+    (* First operand should be a register *)
+    (match insn.arch_detail.operands.(0).value with
+     | Capstone.Arm.Reg _ -> ()
+     | _ -> fail "Expected register operand")
+
+let test_arm_detail_mem () =
+  (* ldr r0, [r1, #4] in ARM mode: 0x04, 0x00, 0x91, 0xe5 (little endian) *)
+  let code = Bytes.of_string "\x04\x00\x91\xe5" in
+  match Capstone.create Capstone.Arch.ARM with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_arm_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "ldr" insn.insn.mnemonic;
+    (* ldr r0, [r1, #4] should have 2 operands: reg and mem *)
+    check int "operand count" 2 (Array.length insn.arch_detail.operands);
+    (* Second operand should be memory *)
+    (match insn.arch_detail.operands.(1).value with
+     | Capstone.Arm.Mem m ->
+       check bool "has base register" true (m.base <> 0);
+       check int32 "displacement" 4l m.disp
+     | _ -> fail "Expected memory operand")
+
+let test_thumb_basic () =
+  (* nop in Thumb mode: 0x00, 0xbf *)
+  let code = Bytes.of_string "\x00\xbf" in
+  match Capstone.create Capstone.Arch.THUMB with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    let insns = Capstone.disasm ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "nop" insn.mnemonic;
+    check int "size" 2 insn.size
+
 let () =
   run "Capstone" [
     "version", [
@@ -416,6 +487,12 @@ let () =
       test_case "multiple instructions" `Quick test_aarch64_multiple;
       test_case "detailed reg operands" `Quick test_aarch64_detail;
       test_case "detailed mem operands" `Quick test_aarch64_detail_mem;
+    ];
+    "arm", [
+      test_case "basic disasm" `Quick test_arm_basic;
+      test_case "detailed reg operands" `Quick test_arm_detail;
+      test_case "detailed mem operands" `Quick test_arm_detail_mem;
+      test_case "thumb basic disasm" `Quick test_thumb_basic;
     ];
     "x86_64", [
       test_case "basic disasm" `Quick test_x86_64_basic;
