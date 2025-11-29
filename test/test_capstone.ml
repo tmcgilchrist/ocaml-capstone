@@ -406,6 +406,46 @@ let test_regs_access_aarch64 () =
     check bool "has regs_read" true (Array.length regs.regs_read > 0);
     check bool "has regs_write" true (Array.length regs.regs_write > 0)
 
+(* SKIPDATA tests *)
+let test_skipdata_basic () =
+  (* Mix valid x86 instruction with invalid bytes:
+     nop (0x90), then 0xFF 0xFF (invalid), then nop (0x90) *)
+  let code = Bytes.of_string "\x90\xff\xff\x90" in
+  match Capstone.create Capstone.Arch.X86_64 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    (* Without SKIPDATA, disassembly stops at invalid bytes *)
+    let insns_without = Capstone.disasm ~addr:0x1000L h code in
+    (* With SKIPDATA, disassembly continues past invalid bytes *)
+    Capstone.set_skipdata h true;
+    let insns_with = Capstone.disasm ~addr:0x1000L h code in
+    Capstone.close h;
+    (* Without skipdata, we only get the first nop *)
+    check int "without skipdata: instruction count" 1 (List.length insns_without);
+    check string "without skipdata: first mnemonic" "nop" (List.hd insns_without).mnemonic;
+    (* With skipdata, we get: nop, .byte, .byte, nop (or nop, .byte 2x, nop depending on grouping) *)
+    check bool "with skipdata: more instructions" true (List.length insns_with > 1);
+    (* First instruction should still be nop *)
+    check string "with skipdata: first mnemonic" "nop" (List.hd insns_with).mnemonic;
+    (* There should be at least one .byte pseudo-instruction *)
+    let has_skipdata = List.exists (fun i -> i.Capstone.mnemonic = ".byte") insns_with in
+    check bool "with skipdata: has .byte" true has_skipdata
+
+let test_skipdata_custom_mnemonic () =
+  (* Test custom mnemonic for skipped data *)
+  let code = Bytes.of_string "\x90\xff\xff\x90" in
+  match Capstone.create Capstone.Arch.X86_64 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_skipdata_mnemonic h (Some "db");
+    let insns = Capstone.disasm ~addr:0x1000L h code in
+    Capstone.close h;
+    (* There should be at least one "db" pseudo-instruction *)
+    let has_db = List.exists (fun i -> i.Capstone.mnemonic = "db") insns in
+    check bool "has custom mnemonic 'db'" true has_db
+
 (* ARM 32-bit tests *)
 let test_arm_basic () =
   (* nop (mov r0, r0) in ARM mode: 0x00, 0x00, 0xa0, 0xe1 (little endian) *)
@@ -521,5 +561,9 @@ let () =
       test_case "reg_name" `Quick test_reg_name;
       test_case "regs_access x86_64" `Quick test_regs_access;
       test_case "regs_access aarch64" `Quick test_regs_access_aarch64;
+    ];
+    "skipdata", [
+      test_case "basic skipdata" `Quick test_skipdata_basic;
+      test_case "custom mnemonic" `Quick test_skipdata_custom_mnemonic;
     ];
   ]

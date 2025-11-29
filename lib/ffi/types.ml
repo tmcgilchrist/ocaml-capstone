@@ -66,6 +66,14 @@ module OptValue = struct
   let syntax_masm = 1 lsl 5
 end
 
+(* cs_opt_skipdata structure for SKIPDATA setup *)
+type cs_opt_skipdata
+let cs_opt_skipdata : cs_opt_skipdata structure typ = structure "cs_opt_skipdata"
+let skipdata_mnemonic = field cs_opt_skipdata "mnemonic" (ptr char)
+let skipdata_callback = field cs_opt_skipdata "callback" (ptr void)  (* function pointer, not used *)
+let skipdata_user_data = field cs_opt_skipdata "user_data" (ptr void)
+let () = seal cs_opt_skipdata
+
 (* Error codes *)
 module Err = struct
   let ok = 0

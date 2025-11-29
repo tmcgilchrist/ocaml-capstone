@@ -180,6 +180,34 @@ let set_syntax_intel (handle : _ t) =
 let set_syntax_att (handle : _ t) =
   set_option handle Types.OptType.syntax Types.OptValue.syntax_att
 
+(* Enable or disable SKIPDATA mode *)
+let set_skipdata (handle : _ t) enabled =
+  set_option handle Types.OptType.skipdata
+    (if enabled then Types.OptValue.on else Types.OptValue.off)
+
+(* Configure SKIPDATA with custom mnemonic.
+   This enables SKIPDATA mode and sets the mnemonic for skipped bytes.
+   The mnemonic string must remain valid for the lifetime of the handle.
+   Pass None to use the default ".byte" mnemonic. *)
+let set_skipdata_mnemonic (handle : _ t) mnemonic =
+  (* First enable skipdata mode *)
+  set_skipdata handle true;
+  (* Then configure the mnemonic if provided *)
+  match mnemonic with
+  | None -> ()
+  | Some mnem ->
+    let skipdata_setup = make Types.cs_opt_skipdata in
+    (* Convert OCaml string to C string *)
+    let mnem_cstr = CArray.of_string mnem in
+    setf skipdata_setup Types.skipdata_mnemonic (CArray.start mnem_cstr);
+    setf skipdata_setup Types.skipdata_callback (Ctypes.null);
+    setf skipdata_setup Types.skipdata_user_data (Ctypes.null);
+    let ptr_val = Ctypes.raw_address_of_ptr (Ctypes.to_voidp (addr skipdata_setup)) in
+    let err = Bindings.cs_option handle.h Types.OptType.skipdata_setup
+      (Unsigned.Size_t.of_int64 (Int64.of_nativeint ptr_val)) in
+    if err <> Types.Err.ok then
+      raise (Capstone_error (error_of_int err))
+
 (* Convert cs_insn structure to OCaml record *)
 let insn_of_cs_insn ptr =
   let mnemonic_arr = getf (!@ ptr) Types.insn_mnemonic in
