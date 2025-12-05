@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ master ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ master ]
 
 jobs:
   linux:
@@ -88,6 +88,10 @@ jobs:
         run: |
           opam install . --deps-only --with-test -y
 
+      - name: Check Capstone version
+        run: |
+          pkg-config --modversion capstone
+
       - name: Build
         run: |
           opam exec -- dune build
@@ -95,7 +99,3 @@ jobs:
       - name: Run tests
         run: |
           opam exec -- dune test
-
-      - name: Check Capstone version
-        run: |
-          pkg-config --modversion capstone
