@@ -1,0 +1,186 @@
+name: Capstone Version Check
+
+on:
+  schedule:
+    # Run every 2 weeks on Monday at 9:00 UTC (1st and 15th-ish)
+    - cron: '0 9 1,15 * *'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  check-capstone:
+    runs-on: ubuntu-latest
+    name: Check for new Capstone release
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Get current pinned version
+        id: current
+        run: |
+          # Extract the version we currently build against from ci.yml
+          CURRENT_VERSION=$(grep -oP 'branch \K[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/ci.yml | head -1)
+          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "Current pinned version: $CURRENT_VERSION"
+
+      - name: Get latest Capstone release
+        id: latest
+        run: |
+          LATEST=$(curl -s https://api.github.com/repos/capstone-engine/capstone/releases/latest | jq -r '.tag_name')
+          echo "version=$LATEST" >> $GITHUB_OUTPUT
+          echo "Latest Capstone release: $LATEST"
+
+      - name: Compare versions
+        id: compare
+        run: |
+          CURRENT="${{ steps.current.outputs.version }}"
+          LATEST="${{ steps.latest.outputs.version }}"
+          if [ "$CURRENT" != "$LATEST" ]; then
+            echo "new_version=true" >> $GITHUB_OUTPUT
+            echo "New version available: $LATEST (current: $CURRENT)"
+          else
+            echo "new_version=false" >> $GITHUB_OUTPUT
+            echo "Already on latest version: $CURRENT"
+          fi
+
+      - name: Check for existing issue
+        id: check_issue
+        if: steps.compare.outputs.new_version == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST="${{ steps.latest.outputs.version }}"
+          # Search for open issues with this version in the title
+          EXISTING=$(gh issue list --state open --search "Capstone $LATEST" --json number --jq 'length')
+          if [ "$EXISTING" -gt 0 ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Issue already exists for version $LATEST"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install system dependencies
+        if: steps.compare.outputs.new_version == 'true' && steps.check_issue.outputs.exists == 'false'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config cmake
+
+      - name: Build Capstone from latest release
+        id: build_capstone
+        if: steps.compare.outputs.new_version == 'true' && steps.check_issue.outputs.exists == 'false'
+        run: |
+          LATEST="${{ steps.latest.outputs.version }}"
+          echo "Building Capstone $LATEST from source..."
+          git clone --depth 1 --branch "$LATEST" https://github.com/capstone-engine/capstone.git /tmp/capstone
+          cd /tmp/capstone
+          mkdir build && cd build
+          cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_SHARED_LIBS=ON
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+          echo "Capstone $LATEST installed successfully"
+          pkg-config --modversion capstone
+
+      - name: Setup OCaml
+        if: steps.compare.outputs.new_version == 'true' && steps.check_issue.outputs.exists == 'false'
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.2.x
+
+      - name: Install OCaml dependencies
+        if: steps.compare.outputs.new_version == 'true' && steps.check_issue.outputs.exists == 'false'
+        run: |
+          opam install . --deps-only --with-test --no-depexts -y
+
+      - name: Build OCaml bindings
+        id: build_ocaml
+        if: steps.compare.outputs.new_version == 'true' && steps.check_issue.outputs.exists == 'false'
+        continue-on-error: true
+        run: |
+          opam exec -- dune build 2>&1 | tee build_output.txt
+          echo "build_exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Run tests
+        id: test_ocaml
+        if: steps.compare.outputs.new_version == 'true' && steps.check_issue.outputs.exists == 'false' && steps.build_ocaml.outputs.build_exit_code == '0'
+        continue-on-error: true
+        run: |
+          opam exec -- dune test 2>&1 | tee test_output.txt
+          echo "test_exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Create success issue
+        if: steps.compare.outputs.new_version == 'true' && steps.check_issue.outputs.exists == 'false' && steps.build_ocaml.outputs.build_exit_code == '0' && steps.test_ocaml.outputs.test_exit_code == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST="${{ steps.latest.outputs.version }}"
+          CURRENT="${{ steps.current.outputs.version }}"
+          gh issue create \
+            --title "Capstone $LATEST is available and compatible" \
+            --label "enhancement" \
+            --body "## New Capstone Version Available
+
+A new version of Capstone has been released and **passes all tests**.
+
+| | Version |
+|---|---|
+| Current | \`$CURRENT\` |
+| Latest | \`$LATEST\` |
+
+### Next Steps
+
+Consider updating the pinned version in \`.github/workflows/ci.yml\`.
+
+cc @tmcgilchrist"
+
+      - name: Create failure issue
+        if: steps.compare.outputs.new_version == 'true' && steps.check_issue.outputs.exists == 'false' && (steps.build_ocaml.outputs.build_exit_code != '0' || steps.test_ocaml.outputs.test_exit_code != '0')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST="${{ steps.latest.outputs.version }}"
+          CURRENT="${{ steps.current.outputs.version }}"
+
+          # Determine failure type and prepare output
+          if [ "${{ steps.build_ocaml.outputs.build_exit_code }}" != "0" ]; then
+            FAILURE_TYPE="Build"
+            OUTPUT=$(cat build_output.txt | tail -100)
+          else
+            FAILURE_TYPE="Tests"
+            OUTPUT=$(cat test_output.txt | tail -100)
+          fi
+
+          # Create the issue body
+          cat > issue_body.md << 'ISSUE_EOF'
+          ## New Capstone Version - $FAILURE_TYPE Failure
+
+          A new version of Capstone has been released but **$FAILURE_TYPE failed** with our OCaml bindings.
+
+          | | Version |
+          |---|---|
+          | Current | `$CURRENT` |
+          | Latest | `$LATEST` |
+
+          ### $FAILURE_TYPE Output
+
+          ```
+          $OUTPUT
+          ```
+
+          ### Action Required
+
+          Please investigate the compatibility issue with Capstone $LATEST.
+
+          cc @tmcgilchrist
+          ISSUE_EOF
+
+          # Substitute variables
+          sed -i "s/\$FAILURE_TYPE/$FAILURE_TYPE/g" issue_body.md
+          sed -i "s/\$CURRENT/$CURRENT/g" issue_body.md
+          sed -i "s/\$LATEST/$LATEST/g" issue_body.md
+          sed -i "s|\$OUTPUT|$OUTPUT|g" issue_body.md
+
+          gh issue create \
+            --title "Capstone $LATEST: $FAILURE_TYPE failure" \
+            --label "bug" \
+            --body-file issue_body.md
