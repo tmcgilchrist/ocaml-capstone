@@ -25,6 +25,7 @@ let headers = [
   { header_name = "riscv.h"; module_prefix = "riscv"; output_prefix = "riscv" };
   { header_name = "ppc.h"; module_prefix = "ppc"; output_prefix = "ppc" };
   { header_name = "systemz.h"; module_prefix = "sysz"; output_prefix = "sysz" };
+  { header_name = "sparc.h"; module_prefix = "sparc"; output_prefix = "sparc" };
 ]
 
 (* Parsed enum definition *)

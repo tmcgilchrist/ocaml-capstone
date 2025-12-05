@@ -12,12 +12,14 @@ module X86_const = X86_const
 module Riscv_const = Riscv_const
 module Ppc_const = Ppc_const
 module Sysz_const = Sysz_const
+module Sparc_const = Sparc_const
 module Aarch64 = Aarch64
 module Arm = Arm
 module X86 = X86
 module Riscv = Riscv
 module Ppc = Ppc
 module Sysz = Sysz
+module Sparc = Sparc
 
 type error =
   | Mem
@@ -100,6 +102,8 @@ module Arch = struct
     | PPC64 : [> `PPC64 ] t
     | PPC64LE : [> `PPC64LE ] t
     | SYSZ : [> `SYSZ ] t
+    | SPARC : [> `SPARC ] t
+    | SPARC64 : [> `SPARC64 ] t
 
   let to_arch_mode : type a. a t -> int * int = function
     | AARCH64 -> (Types.Arch.aarch64, Types.Mode.little_endian)
@@ -118,6 +122,8 @@ module Arch = struct
     | PPC64 -> (Types.Arch.ppc, Types.Mode.ppc64 lor Types.Mode.big_endian)
     | PPC64LE -> (Types.Arch.ppc, Types.Mode.ppc64)
     | SYSZ -> (Types.Arch.sysz, Types.Mode.big_endian)
+    | SPARC -> (Types.Arch.sparc, Types.Mode.big_endian)
+    | SPARC64 -> (Types.Arch.sparc, Types.Mode.sparc_v9 lor Types.Mode.big_endian)
 end
 
 (* Disassembler type with phantom type for architecture *)
@@ -346,6 +352,7 @@ type arch_detail =
   | Riscv_detail of Riscv.detail
   | Ppc_detail of Ppc.detail
   | Sysz_detail of Sysz.detail
+  | Sparc_detail of Sparc.detail
 
 (* Detailed instruction with architecture-agnostic detail *)
 type any_detailed_insn = {
@@ -370,6 +377,7 @@ let any_detailed_insn_of_cs_insn ~arch ptr =
       | a when a = Types.Arch.riscv -> Riscv_detail Riscv.empty_detail
       | a when a = Types.Arch.ppc -> Ppc_detail Ppc.empty_detail
       | a when a = Types.Arch.sysz -> Sysz_detail Sysz.empty_detail
+      | a when a = Types.Arch.sparc -> Sparc_detail Sparc.empty_detail
       | _ -> failwith "Unsupported architecture"
     in
     {
@@ -395,6 +403,8 @@ let any_detailed_insn_of_cs_insn ~arch ptr =
         Ppc_detail (Ppc.detail_of_cs_detail detail_ptr)
       | a when a = Types.Arch.sysz ->
         Sysz_detail (Sysz.detail_of_cs_detail detail_ptr)
+      | a when a = Types.Arch.sparc ->
+        Sparc_detail (Sparc.detail_of_cs_detail detail_ptr)
       | _ -> failwith "Unsupported architecture"
     in
     {
@@ -482,6 +492,13 @@ let to_sysz_detail any =
       regs_write = any.regs_write; groups = any.groups; arch_detail = d }
   | _ -> failwith "Expected SystemZ detail"
 
+let to_sparc_detail any =
+  match any.detail with
+  | Sparc_detail d ->
+    { insn = any.insn; regs_read = any.regs_read;
+      regs_write = any.regs_write; groups = any.groups; arch_detail = d }
+  | _ -> failwith "Expected SPARC detail"
+
 (* Disassemble with detailed information (AArch64) *)
 let disasm_aarch64_detail ?(count=0) ~addr (handle : [> `AARCH64] t) code =
   disasm_detail_internal ~count ~addr handle code
@@ -511,6 +528,11 @@ let disasm_sysz_detail ?(count=0) ~addr (handle : [> `SYSZ] t) code =
 let disasm_arm_detail ?(count=0) ~addr (handle : [> `ARM | `ARM_BE | `THUMB | `THUMB_BE | `THUMB_MCLASS | `ARMV8] t) code =
   disasm_detail_internal ~count ~addr handle code
   |> List.map to_arm_detail
+
+(* Disassemble with detailed information (SPARC) *)
+let disasm_sparc_detail ?(count=0) ~addr (handle : [> `SPARC | `SPARC64] t) code =
+  disasm_detail_internal ~count ~addr handle code
+  |> List.map to_sparc_detail
 
 (* Get all registers accessed by an instruction (both explicit and implicit) *)
 type regs_access = {

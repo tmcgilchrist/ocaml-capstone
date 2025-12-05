@@ -596,6 +596,66 @@ let test_thumb_basic () =
     check string "mnemonic" "nop" insn.mnemonic;
     check int "size" 2 insn.size
 
+(* SPARC tests *)
+let test_sparc_basic () =
+  (* SPARC nop (sethi %hi(0), %g0): 0x01 0x00 0x00 0x00 (big endian) *)
+  let code = Bytes.of_string "\x01\x00\x00\x00" in
+  match Capstone.create Capstone.Arch.SPARC with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    let insns = Capstone.disasm ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "nop" insn.mnemonic;
+    check int "size" 4 insn.size
+
+let test_sparc_detail () =
+  (* SPARC add %g1, %g2, %g3: 0x86 0x00 0x40 0x02 (big endian) *)
+  let code = Bytes.of_string "\x86\x00\x40\x02" in
+  match Capstone.create Capstone.Arch.SPARC with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_sparc_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "add" insn.insn.mnemonic;
+    (* Should have 3 register operands *)
+    check int "operand count" 3 (Array.length insn.arch_detail.operands);
+    (* All operands should be registers *)
+    Array.iter (fun op ->
+      match op.Capstone.Sparc.value with
+      | Capstone.Sparc.Reg _ -> ()
+      | _ -> fail "Expected register operand"
+    ) insn.arch_detail.operands
+
+let test_sparc_detail_mem () =
+  (* SPARC ld [%g1], %g2: 0xc4 0x00 0x40 0x00 (big endian) *)
+  let code = Bytes.of_string "\xc4\x00\x40\x00" in
+  match Capstone.create Capstone.Arch.SPARC with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_sparc_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "ld" insn.insn.mnemonic;
+    (* Should have 2 operands: memory and register *)
+    check int "operand count" 2 (Array.length insn.arch_detail.operands);
+    (* First should be memory, second should be register *)
+    (match insn.arch_detail.operands.(0).value with
+     | Capstone.Sparc.Mem _ -> ()
+     | _ -> fail "Expected memory operand first");
+    (match insn.arch_detail.operands.(1).value with
+     | Capstone.Sparc.Reg _ -> ()
+     | _ -> fail "Expected register operand second")
+
 let () =
   run "Capstone" [
     "version", [
@@ -633,6 +693,11 @@ let () =
       test_case "basic disasm" `Quick test_sysz_basic;
       test_case "detailed reg operands" `Quick test_sysz_detail;
       test_case "detailed mem operands" `Quick test_sysz_detail_mem;
+    ];
+    "sparc", [
+      test_case "basic disasm" `Quick test_sparc_basic;
+      test_case "detailed reg operands" `Quick test_sparc_detail;
+      test_case "detailed mem operands" `Quick test_sparc_detail_mem;
     ];
     "convenience", [
       test_case "with_handle" `Quick test_with_handle;

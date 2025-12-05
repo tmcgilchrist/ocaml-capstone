@@ -27,6 +27,7 @@
     - RISC-V (32/64-bit)
     - PowerPC (32/64-bit, big/little endian)
     - SystemZ (s390x)
+    - SPARC (32/64-bit)
 
     @see <https://www.capstone-engine.org/> Capstone Engine website
 *)
@@ -58,6 +59,9 @@ module Ppc_const = Ppc_const
 module Sysz_const = Sysz_const
 (** SystemZ architecture constants *)
 
+module Sparc_const = Sparc_const
+(** SPARC architecture constants *)
+
 module Aarch64 = Aarch64
 (** AArch64 instruction detail types *)
 
@@ -75,6 +79,9 @@ module Ppc = Ppc
 
 module Sysz = Sysz
 (** SystemZ instruction detail types *)
+
+module Sparc = Sparc
+(** SPARC instruction detail types *)
 
 (** {1 Error Handling} *)
 
@@ -159,6 +166,7 @@ type arch_detail =
   | Riscv_detail of Riscv.detail
   | Ppc_detail of Ppc.detail
   | Sysz_detail of Sysz.detail
+  | Sparc_detail of Sparc.detail
 
 (** Detailed instruction with architecture-agnostic detail type.
 
@@ -217,6 +225,10 @@ module Arch : sig
         (** PowerPC 64-bit (little endian) *)
     | SYSZ : [> `SYSZ ] t
         (** SystemZ (s390x) *)
+    | SPARC : [> `SPARC ] t
+        (** SPARC 32-bit (big endian) *)
+    | SPARC64 : [> `SPARC64 ] t
+        (** SPARC 64-bit / V9 (big endian) *)
 end
 
 (** {1 Runtime Mode Switching}
@@ -366,6 +378,17 @@ val disasm_sysz_detail :
   ?count:int -> addr:int64 -> [> `SYSZ ] t -> bytes ->
   Sysz.detail detailed_insn list
 
+(** Disassemble with SPARC architecture-specific details.
+
+    @param count Maximum instructions (0 = all)
+    @param addr Starting address
+    @param handle SPARC-compatible handle
+    @param code Binary code
+    @return List of detailed instructions *)
+val disasm_sparc_detail :
+  ?count:int -> addr:int64 -> [> `SPARC | `SPARC64 ] t -> bytes ->
+  Sparc.detail detailed_insn list
+
 (** {2 Architecture-Agnostic Detailed Disassembly} *)
 
 (** Disassemble with architecture-agnostic detailed information.
@@ -417,6 +440,9 @@ val to_ppc_detail : any_detailed_insn -> Ppc.detail detailed_insn
 
 (** Convert to SystemZ-typed detail. Raises if not SystemZ. *)
 val to_sysz_detail : any_detailed_insn -> Sysz.detail detailed_insn
+
+(** Convert to SPARC-typed detail. Raises if not SPARC. *)
+val to_sparc_detail : any_detailed_insn -> Sparc.detail detailed_insn
 
 (** Disassemble and get all registers accessed by each instruction.
 
