@@ -11,6 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+        ocaml-compiler: ['4.14.x', '5.2.x']
         include:
           - os: ubuntu-latest
             arch: x86_64
@@ -18,7 +20,7 @@ jobs:
             arch: arm64
 
     runs-on: ${{ matrix.os }}
-    name: Linux ${{ matrix.arch }}
+    name: Linux ${{ matrix.arch }} (OCaml ${{ matrix.ocaml-compiler }})
 
     steps:
       - name: Checkout code
@@ -40,7 +42,7 @@ jobs:
       - name: Setup OCaml
         uses: ocaml/setup-ocaml@v3
         with:
-          ocaml-compiler: 5.2.x
+          ocaml-compiler: ${{ matrix.ocaml-compiler }}
 
       - name: Install dependencies
         run: |
@@ -61,8 +63,13 @@ jobs:
           opam exec -- dune test
 
   macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        ocaml-compiler: ['4.14.x', '5.2.x']
+
     runs-on: macos-14
-    name: macOS ARM64
+    name: macOS ARM64 (OCaml ${{ matrix.ocaml-compiler }})
 
     steps:
       - name: Checkout code
@@ -75,7 +82,7 @@ jobs:
       - name: Setup OCaml
         uses: ocaml/setup-ocaml@v3
         with:
-          ocaml-compiler: 5.2.x
+          ocaml-compiler: ${{ matrix.ocaml-compiler }}
 
       - name: Install dependencies
         run: |
