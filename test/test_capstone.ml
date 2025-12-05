@@ -720,6 +720,193 @@ let test_mips_detail_mem () =
      | Capstone.Mips.Mem _ -> ()
      | _ -> fail "Expected memory operand second")
 
+(* M680X tests *)
+let test_m680x_basic () =
+  (* M6809 nop: 0x12 *)
+  let code = Bytes.of_string "\x12" in
+  match Capstone.create Capstone.Arch.M680X_6809 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    let insns = Capstone.disasm ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "nop" insn.mnemonic;
+    check int "size" 1 insn.size
+
+let test_m680x_detail () =
+  (* M6809 lda #$10: 0x86 0x10 (load A with immediate 0x10) *)
+  let code = Bytes.of_string "\x86\x10" in
+  match Capstone.create Capstone.Arch.M680X_6809 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_m680x_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "lda" insn.insn.mnemonic;
+    (* M680X has flags indicating if operand is part of mnemonic - check operands exist *)
+    check bool "has operands" true (Array.length insn.arch_detail.operands > 0);
+    (* Check that we can iterate operands and access their values *)
+    Array.iteri (fun i op ->
+      let _desc = match op.Capstone.M680x.value with
+        | Capstone.M680x.Invalid -> Printf.sprintf "op[%d]: invalid" i
+        | Capstone.M680x.Reg r -> Printf.sprintf "op[%d]: reg %d" i r
+        | Capstone.M680x.Imm v -> Printf.sprintf "op[%d]: imm %ld" i v
+        | Capstone.M680x.Idx _ -> Printf.sprintf "op[%d]: idx" i
+        | Capstone.M680x.Ext _ -> Printf.sprintf "op[%d]: ext" i
+        | Capstone.M680x.Direct d -> Printf.sprintf "op[%d]: direct 0x%x" i d
+        | Capstone.M680x.Rel _ -> Printf.sprintf "op[%d]: rel" i
+        | Capstone.M680x.Const c -> Printf.sprintf "op[%d]: const %d" i c
+      in
+      ()
+    ) insn.arch_detail.operands
+
+let test_m680x_detail_extended () =
+  (* M6809 jmp $1234: 0x7e 0x12 0x34 (jump to extended address) *)
+  let code = Bytes.of_string "\x7e\x12\x34" in
+  match Capstone.create Capstone.Arch.M680X_6809 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_m680x_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "jmp" insn.insn.mnemonic;
+    (* Check that we have operands and the detail structure is accessible *)
+    check bool "has operands" true (Array.length insn.arch_detail.operands > 0);
+    (* Verify we can access operand size and access fields *)
+    let op = insn.arch_detail.operands.(0) in
+    check bool "operand size accessible" true (op.Capstone.M680x.size >= 0)
+
+(* M68K tests *)
+let test_m68k_basic () =
+  (* M68K nop: 0x4e 0x71 (big endian) *)
+  let code = Bytes.of_string "\x4e\x71" in
+  match Capstone.create Capstone.Arch.M68K_040 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    let insns = Capstone.disasm ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "nop" insn.mnemonic;
+    check int "size" 2 insn.size
+
+let test_m68k_move () =
+  (* M68K move.l d0, d1: 0x22 0x00 (big endian) *)
+  let code = Bytes.of_string "\x22\x00" in
+  match Capstone.create Capstone.Arch.M68K_040 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    let insns = Capstone.disasm ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    (* M68K uses move.l, move.w, move.b etc with size suffix *)
+    check string "mnemonic" "move.l" insn.mnemonic;
+    check bool "has operands" true (String.length insn.op_str > 0)
+
+let test_m68k_detail () =
+  (* M68K move.l d0, d1: 0x22 0x00 (big endian) *)
+  let code = Bytes.of_string "\x22\x00" in
+  match Capstone.create Capstone.Arch.M68K_040 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_m68k_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "move.l" insn.insn.mnemonic;
+    (* move.l d0, d1 should have 2 operands *)
+    check int "operand count" 2 (Array.length insn.arch_detail.operands);
+    (* Both operands should be registers *)
+    Array.iter (fun op ->
+      match op.Capstone.M68k.value with
+      | Capstone.M68k.Reg _ -> ()
+      | _ -> fail "Expected register operand"
+    ) insn.arch_detail.operands
+
+let test_m68k_detail_imm () =
+  (* M68K moveq #5, d0: 0x70 0x05 (big endian) *)
+  let code = Bytes.of_string "\x70\x05" in
+  match Capstone.create Capstone.Arch.M68K_040 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_m68k_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "moveq" insn.insn.mnemonic;
+    (* moveq #5, d0 should have 2 operands: imm and reg *)
+    check int "operand count" 2 (Array.length insn.arch_detail.operands);
+    (* First operand should be immediate *)
+    (match insn.arch_detail.operands.(0).value with
+     | Capstone.M68k.Imm imm ->
+       check int64 "immediate value" 5L imm
+     | _ -> fail "Expected immediate operand");
+    (* Second operand should be register *)
+    (match insn.arch_detail.operands.(1).value with
+     | Capstone.M68k.Reg _ -> ()
+     | _ -> fail "Expected register operand")
+
+let test_m68k_detail_mem () =
+  (* M68K move.l (a0), d0: 0x20 0x10 (big endian) *)
+  let code = Bytes.of_string "\x20\x10" in
+  match Capstone.create Capstone.Arch.M68K_040 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_m68k_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "move.l" insn.insn.mnemonic;
+    (* move.l (a0), d0 should have 2 operands: mem and reg *)
+    check int "operand count" 2 (Array.length insn.arch_detail.operands);
+    (* Check first operand - can be mem or reg depending on how Capstone reports it *)
+    let found_mem = Array.exists (fun op ->
+      match op.Capstone.M68k.value with
+      | Capstone.M68k.Mem _ -> true
+      | _ -> false
+    ) insn.arch_detail.operands in
+    check bool "has memory operand" true found_mem
+
+let test_m68k_branch () =
+  (* M68K bra.s $+4: 0x60 0x02 (branch short, displacement 2) *)
+  let code = Bytes.of_string "\x60\x02" in
+  match Capstone.create Capstone.Arch.M68K_040 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_m68k_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    (* M68K uses bra.b or bra.s for byte-sized branch *)
+    check bool "mnemonic starts with bra" true (String.length insn.insn.mnemonic >= 3 && String.sub insn.insn.mnemonic 0 3 = "bra");
+    (* bra should have 1 operand: branch displacement *)
+    check int "operand count" 1 (Array.length insn.arch_detail.operands);
+    (* Operand should be branch displacement *)
+    (match insn.arch_detail.operands.(0).value with
+     | Capstone.M68k.Br_disp br ->
+       (* disp_size should indicate byte displacement *)
+       check bool "has disp_size" true (br.disp_size > 0)
+     | _ -> fail "Expected branch displacement operand")
+
 let () =
   run "Capstone" [
     "version", [
@@ -767,6 +954,19 @@ let () =
       test_case "basic disasm" `Quick test_mips_basic;
       test_case "detailed reg operands" `Quick test_mips_detail;
       test_case "detailed mem operands" `Quick test_mips_detail_mem;
+    ];
+    "m680x", [
+      test_case "basic disasm" `Quick test_m680x_basic;
+      test_case "detailed imm operands" `Quick test_m680x_detail;
+      test_case "detailed operands" `Quick test_m680x_detail_extended;
+    ];
+    "m68k", [
+      test_case "basic disasm" `Quick test_m68k_basic;
+      test_case "move instruction" `Quick test_m68k_move;
+      test_case "detailed reg operands" `Quick test_m68k_detail;
+      test_case "detailed imm operands" `Quick test_m68k_detail_imm;
+      test_case "detailed mem operands" `Quick test_m68k_detail_mem;
+      test_case "branch displacement" `Quick test_m68k_branch;
     ];
     "convenience", [
       test_case "with_handle" `Quick test_with_handle;

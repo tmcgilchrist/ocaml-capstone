@@ -7,7 +7,7 @@ Features:
  - ctypes-based FFI (no manual C stubs)
  - Type-safe architecture selection via GADTs
  - Targets Capstone 5 on Linux and macOS (potentially FreeBSD in future)
- - Supports x86 (16/32/64-bit), ARM (32/64-bit), s390x, and Power (potentially more in future)
+ - Supports x86 (16/32/64-bit), ARM (32/64-bit), RISC-V, PowerPC, SystemZ (s390x), SPARC, MIPS, M680X, and M68K
  - Detailed instruction information (operands, registers, memory refs)
  - Pure OCaml code generation for enum handling
 
