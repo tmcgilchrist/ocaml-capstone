@@ -13,6 +13,7 @@ module Riscv_const = Riscv_const
 module Ppc_const = Ppc_const
 module Sysz_const = Sysz_const
 module Sparc_const = Sparc_const
+module Mips_const = Mips_const
 module Aarch64 = Aarch64
 module Arm = Arm
 module X86 = X86
@@ -20,6 +21,7 @@ module Riscv = Riscv
 module Ppc = Ppc
 module Sysz = Sysz
 module Sparc = Sparc
+module Mips = Mips
 
 type error =
   | Mem
@@ -104,6 +106,10 @@ module Arch = struct
     | SYSZ : [> `SYSZ ] t
     | SPARC : [> `SPARC ] t
     | SPARC64 : [> `SPARC64 ] t
+    | MIPS32 : [> `MIPS32 ] t
+    | MIPS64 : [> `MIPS64 ] t
+    | MIPS32_BE : [> `MIPS32_BE ] t
+    | MIPS64_BE : [> `MIPS64_BE ] t
 
   let to_arch_mode : type a. a t -> int * int = function
     | AARCH64 -> (Types.Arch.aarch64, Types.Mode.little_endian)
@@ -124,6 +130,10 @@ module Arch = struct
     | SYSZ -> (Types.Arch.sysz, Types.Mode.big_endian)
     | SPARC -> (Types.Arch.sparc, Types.Mode.big_endian)
     | SPARC64 -> (Types.Arch.sparc, Types.Mode.sparc_v9 lor Types.Mode.big_endian)
+    | MIPS32 -> (Types.Arch.mips, Types.Mode.mips32)
+    | MIPS64 -> (Types.Arch.mips, Types.Mode.mips64)
+    | MIPS32_BE -> (Types.Arch.mips, Types.Mode.mips32 lor Types.Mode.big_endian)
+    | MIPS64_BE -> (Types.Arch.mips, Types.Mode.mips64 lor Types.Mode.big_endian)
 end
 
 (* Disassembler type with phantom type for architecture *)
@@ -353,6 +363,7 @@ type arch_detail =
   | Ppc_detail of Ppc.detail
   | Sysz_detail of Sysz.detail
   | Sparc_detail of Sparc.detail
+  | Mips_detail of Mips.detail
 
 (* Detailed instruction with architecture-agnostic detail *)
 type any_detailed_insn = {
@@ -378,6 +389,7 @@ let any_detailed_insn_of_cs_insn ~arch ptr =
       | a when a = Types.Arch.ppc -> Ppc_detail Ppc.empty_detail
       | a when a = Types.Arch.sysz -> Sysz_detail Sysz.empty_detail
       | a when a = Types.Arch.sparc -> Sparc_detail Sparc.empty_detail
+      | a when a = Types.Arch.mips -> Mips_detail Mips.empty_detail
       | _ -> failwith "Unsupported architecture"
     in
     {
@@ -405,6 +417,8 @@ let any_detailed_insn_of_cs_insn ~arch ptr =
         Sysz_detail (Sysz.detail_of_cs_detail detail_ptr)
       | a when a = Types.Arch.sparc ->
         Sparc_detail (Sparc.detail_of_cs_detail detail_ptr)
+      | a when a = Types.Arch.mips ->
+        Mips_detail (Mips.detail_of_cs_detail detail_ptr)
       | _ -> failwith "Unsupported architecture"
     in
     {
@@ -499,6 +513,13 @@ let to_sparc_detail any =
       regs_write = any.regs_write; groups = any.groups; arch_detail = d }
   | _ -> failwith "Expected SPARC detail"
 
+let to_mips_detail any =
+  match any.detail with
+  | Mips_detail d ->
+    { insn = any.insn; regs_read = any.regs_read;
+      regs_write = any.regs_write; groups = any.groups; arch_detail = d }
+  | _ -> failwith "Expected MIPS detail"
+
 (* Disassemble with detailed information (AArch64) *)
 let disasm_aarch64_detail ?(count=0) ~addr (handle : [> `AARCH64] t) code =
   disasm_detail_internal ~count ~addr handle code
@@ -533,6 +554,11 @@ let disasm_arm_detail ?(count=0) ~addr (handle : [> `ARM | `ARM_BE | `THUMB | `T
 let disasm_sparc_detail ?(count=0) ~addr (handle : [> `SPARC | `SPARC64] t) code =
   disasm_detail_internal ~count ~addr handle code
   |> List.map to_sparc_detail
+
+(* Disassemble with detailed information (MIPS) *)
+let disasm_mips_detail ?(count=0) ~addr (handle : [> `MIPS32 | `MIPS64 | `MIPS32_BE | `MIPS64_BE] t) code =
+  disasm_detail_internal ~count ~addr handle code
+  |> List.map to_mips_detail
 
 (* Get all registers accessed by an instruction (both explicit and implicit) *)
 type regs_access = {

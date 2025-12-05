@@ -28,6 +28,7 @@
     - PowerPC (32/64-bit, big/little endian)
     - SystemZ (s390x)
     - SPARC (32/64-bit)
+    - MIPS (32/64-bit, big/little endian)
 
     @see <https://www.capstone-engine.org/> Capstone Engine website
 *)
@@ -62,6 +63,9 @@ module Sysz_const = Sysz_const
 module Sparc_const = Sparc_const
 (** SPARC architecture constants *)
 
+module Mips_const = Mips_const
+(** MIPS architecture constants *)
+
 module Aarch64 = Aarch64
 (** AArch64 instruction detail types *)
 
@@ -82,6 +86,9 @@ module Sysz = Sysz
 
 module Sparc = Sparc
 (** SPARC instruction detail types *)
+
+module Mips = Mips
+(** MIPS instruction detail types *)
 
 (** {1 Error Handling} *)
 
@@ -167,6 +174,7 @@ type arch_detail =
   | Ppc_detail of Ppc.detail
   | Sysz_detail of Sysz.detail
   | Sparc_detail of Sparc.detail
+  | Mips_detail of Mips.detail
 
 (** Detailed instruction with architecture-agnostic detail type.
 
@@ -229,6 +237,14 @@ module Arch : sig
         (** SPARC 32-bit (big endian) *)
     | SPARC64 : [> `SPARC64 ] t
         (** SPARC 64-bit / V9 (big endian) *)
+    | MIPS32 : [> `MIPS32 ] t
+        (** MIPS 32-bit (little endian) *)
+    | MIPS64 : [> `MIPS64 ] t
+        (** MIPS 64-bit (little endian) *)
+    | MIPS32_BE : [> `MIPS32_BE ] t
+        (** MIPS 32-bit (big endian) *)
+    | MIPS64_BE : [> `MIPS64_BE ] t
+        (** MIPS 64-bit (big endian) *)
 end
 
 (** {1 Runtime Mode Switching}
@@ -389,6 +405,17 @@ val disasm_sparc_detail :
   ?count:int -> addr:int64 -> [> `SPARC | `SPARC64 ] t -> bytes ->
   Sparc.detail detailed_insn list
 
+(** Disassemble with MIPS architecture-specific details.
+
+    @param count Maximum instructions (0 = all)
+    @param addr Starting address
+    @param handle MIPS-compatible handle
+    @param code Binary code
+    @return List of detailed instructions *)
+val disasm_mips_detail :
+  ?count:int -> addr:int64 -> [> `MIPS32 | `MIPS64 | `MIPS32_BE | `MIPS64_BE ] t -> bytes ->
+  Mips.detail detailed_insn list
+
 (** {2 Architecture-Agnostic Detailed Disassembly} *)
 
 (** Disassemble with architecture-agnostic detailed information.
@@ -443,6 +470,9 @@ val to_sysz_detail : any_detailed_insn -> Sysz.detail detailed_insn
 
 (** Convert to SPARC-typed detail. Raises if not SPARC. *)
 val to_sparc_detail : any_detailed_insn -> Sparc.detail detailed_insn
+
+(** Convert to MIPS-typed detail. Raises if not MIPS. *)
+val to_mips_detail : any_detailed_insn -> Mips.detail detailed_insn
 
 (** Disassemble and get all registers accessed by each instruction.
 

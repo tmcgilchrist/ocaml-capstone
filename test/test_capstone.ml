@@ -656,6 +656,70 @@ let test_sparc_detail_mem () =
      | Capstone.Sparc.Reg _ -> ()
      | _ -> fail "Expected register operand second")
 
+(* MIPS tests *)
+let test_mips_basic () =
+  (* MIPS nop (sll $zero, $zero, 0): 0x00 0x00 0x00 0x00 (little endian) *)
+  let code = Bytes.of_string "\x00\x00\x00\x00" in
+  match Capstone.create Capstone.Arch.MIPS32 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    let insns = Capstone.disasm ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "nop" insn.mnemonic;
+    check int "size" 4 insn.size
+
+let test_mips_detail () =
+  (* MIPS add $v0, $a0, $a1: 0x20 0x10 0x85 0x00 (little endian)
+     Encoding: 000000 00100 00101 00010 00000 100000
+               opcode $a0   $a1   $v0   shamt add *)
+  let code = Bytes.of_string "\x20\x10\x85\x00" in
+  match Capstone.create Capstone.Arch.MIPS32 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_mips_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "add" insn.insn.mnemonic;
+    (* Should have 3 register operands *)
+    check int "operand count" 3 (Array.length insn.arch_detail.operands);
+    (* All operands should be registers *)
+    Array.iter (fun op ->
+      match op.Capstone.Mips.value with
+      | Capstone.Mips.Reg _ -> ()
+      | _ -> fail "Expected register operand"
+    ) insn.arch_detail.operands
+
+let test_mips_detail_mem () =
+  (* MIPS lw $v0, 0($a0): 0x00 0x00 0x82 0x8c (little endian)
+     Encoding: 100011 00100 00010 0000000000000000
+               lw     $a0   $v0   offset(0) *)
+  let code = Bytes.of_string "\x00\x00\x82\x8c" in
+  match Capstone.create Capstone.Arch.MIPS32 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    Capstone.set_detail h true;
+    let insns = Capstone.disasm_mips_detail ~addr:0x1000L h code in
+    Capstone.close h;
+    check int "instruction count" 1 (List.length insns);
+    let insn = List.hd insns in
+    check string "mnemonic" "lw" insn.insn.mnemonic;
+    (* Should have 2 operands: register and memory *)
+    check int "operand count" 2 (Array.length insn.arch_detail.operands);
+    (* First should be register, second should be memory *)
+    (match insn.arch_detail.operands.(0).value with
+     | Capstone.Mips.Reg _ -> ()
+     | _ -> fail "Expected register operand first");
+    (match insn.arch_detail.operands.(1).value with
+     | Capstone.Mips.Mem _ -> ()
+     | _ -> fail "Expected memory operand second")
+
 let () =
   run "Capstone" [
     "version", [
@@ -698,6 +762,11 @@ let () =
       test_case "basic disasm" `Quick test_sparc_basic;
       test_case "detailed reg operands" `Quick test_sparc_detail;
       test_case "detailed mem operands" `Quick test_sparc_detail_mem;
+    ];
+    "mips", [
+      test_case "basic disasm" `Quick test_mips_basic;
+      test_case "detailed reg operands" `Quick test_mips_detail;
+      test_case "detailed mem operands" `Quick test_mips_detail_mem;
     ];
     "convenience", [
       test_case "with_handle" `Quick test_with_handle;

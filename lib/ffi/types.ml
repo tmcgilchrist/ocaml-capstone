@@ -42,6 +42,10 @@ module Mode = struct
   let ppc64 = 1 lsl 3    (* CS_MODE_64 = 8 *)
   (* SPARC modes *)
   let sparc_v9 = 1 lsl 4  (* CS_MODE_V9 = 16, SparcV9 mode *)
+  (* MIPS modes *)
+  let mips32 = 1 lsl 2   (* CS_MODE_MIPS32 = CS_MODE_32 = 4 *)
+  let mips64 = 1 lsl 3   (* CS_MODE_MIPS64 = CS_MODE_64 = 8 *)
+  let micro = 1 lsl 4    (* CS_MODE_MICRO = 16 *)
 end
 
 (* Option types *)
