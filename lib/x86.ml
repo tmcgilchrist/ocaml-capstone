@@ -153,3 +153,24 @@ let detail_of_cs_detail detail_ptr =
   let x86_ptr = from_voidp Types.cs_x86 (to_voidp (byte_ptr +@ 96)) in
   let x86 = !@ x86_ptr in
   detail_of_cs_x86 x86
+
+(* Empty detail for when no detail is available *)
+let empty_detail = {
+  prefix = [|0;0;0;0|];
+  opcode = [|0;0;0;0|];
+  rex = 0;
+  addr_size = 0;
+  modrm = 0;
+  sib = 0;
+  disp = 0L;
+  sib_index = 0;
+  sib_scale = 0;
+  sib_base = 0;
+  xop_cc = 0;
+  sse_cc = 0;
+  avx_cc = 0;
+  avx_sae = false;
+  avx_rm = 0;
+  eflags = 0L;
+  operands = [||];
+}

@@ -1,0 +1,3 @@
+(documentation
+ (package capstone)
+ (mld_files index faq))

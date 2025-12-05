@@ -150,3 +150,12 @@ let detail_of_cs_detail detail_ptr =
   let detail = !@ detail_ptr in
   let arm64 = getf detail Types.detail_arm64 in
   detail_of_cs_arm64 arm64
+
+(* Empty detail for when no detail is available *)
+let empty_detail = {
+  cc = 0;
+  update_flags = false;
+  writeback = false;
+  post_index = false;
+  operands = [||];
+}

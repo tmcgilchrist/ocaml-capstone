@@ -1,0 +1,296 @@
+{0 Capstone}
+
+Capstone is a lightweight multi-platform, multi-architecture disassembly
+framework. This library provides modern OCaml bindings using ctypes with a
+type-safe API.
+
+The bindings support six major architectures: ARM64 (AArch64), ARM 32-bit,
+x86/x86-64, RISC-V, PowerPC, and SystemZ. Features include detailed
+instruction information, register access tracking, runtime mode switching,
+and custom mnemonic support.
+
+{1:manuals Manuals}
+
+{ul
+{- The {{!page-faq}FAQ} answers common questions about the library.}}
+
+{1:quick_start Quick Start}
+
+{2 Basic Disassembly}
+
+{[
+open Capstone
+
+(* Disassemble x86-64 code *)
+let code = Bytes.of_string "\x55\x48\x89\xe5\x48\x83\xec\x10" in
+match create Arch.X86_64 with
+| Ok handle ->
+  let insns = disasm ~addr:0x1000L handle code in
+  List.iter (fun i ->
+    Printf.printf "0x%Lx: %s %s\n" i.address i.mnemonic i.op_str
+  ) insns;
+  close handle
+| Error e ->
+  Printf.eprintf "Error: %s\n" (strerror e)
+]}
+
+Output:
+{v
+0x1000: push rbp
+0x1001: mov rbp, rsp
+0x1004: sub rsp, 0x10
+v}
+
+{2 Using with_handle}
+
+For simpler resource management, use {!Capstone.with_handle}:
+
+{[
+let result =
+  Capstone.with_handle Arch.X86_64 (fun h ->
+    Capstone.disasm ~addr:0x1000L h code
+  )
+in
+match result with
+| Ok insns -> (* process instructions *)
+| Error e -> (* handle error *)
+]}
+
+{2 Detailed Instruction Information}
+
+Enable detail mode to access operands, registers, and groups:
+
+{[
+open Capstone
+
+let () =
+  match create Arch.AARCH64 with
+  | Ok handle ->
+    set_detail handle true;
+    let code = Bytes.of_string "\x20\x00\x80\xd2" in  (* mov x0, #1 *)
+    let insns = disasm_aarch64_detail ~addr:0L handle code in
+    List.iter (fun di ->
+      Printf.printf "%s %s\n" di.insn.mnemonic di.insn.op_str;
+      Printf.printf "  Operands: %d\n" (List.length di.arch_detail.operands);
+      List.iter (fun op ->
+        match op.Aarch64.value with
+        | Aarch64.Reg r -> Printf.printf "    REG: %d\n" r
+        | Aarch64.Imm i -> Printf.printf "    IMM: %Ld\n" i
+        | _ -> ()
+      ) di.arch_detail.operands
+    ) insns;
+    close handle
+  | Error _ -> ()
+]}
+
+{1:architectures Supported Architectures}
+
+{2 ARM64 (AArch64)}
+
+64-bit ARM architecture with full support for NEON SIMD and SVE vector
+extensions.
+
+{[
+let handle = create_exn Arch.AARCH64 in
+(* ... *)
+]}
+
+See {!Capstone.Aarch64} for detail types and {!Capstone.Aarch64_const} for
+constants.
+
+{2 ARM 32-bit}
+
+32-bit ARM with multiple mode variants:
+
+{ul
+{- {!Capstone.Arch.ARM} - Standard ARM mode (little endian)}
+{- {!Capstone.Arch.ARM_BE} - ARM mode (big endian)}
+{- {!Capstone.Arch.THUMB} - Thumb mode (little endian)}
+{- {!Capstone.Arch.THUMB_BE} - Thumb mode (big endian)}
+{- {!Capstone.Arch.THUMB_MCLASS} - Cortex-M microcontrollers}
+{- {!Capstone.Arch.ARMV8} - ARMv8 A32 encoding}}
+
+Use {!Capstone.set_mode_arm} to switch between ARM and Thumb at runtime.
+
+{2 x86/x86-64}
+
+Intel/AMD x86 architecture with three bit-widths:
+
+{ul
+{- {!Capstone.Arch.X86_16} - 16-bit real mode}
+{- {!Capstone.Arch.X86_32} - 32-bit protected mode}
+{- {!Capstone.Arch.X86_64} - 64-bit long mode}}
+
+Full support for SSE, AVX, and AVX-512 SIMD instructions. Use
+{!Capstone.set_mode_x86} to switch modes at runtime.
+
+{2 RISC-V}
+
+RISC-V 32-bit and 64-bit variants:
+
+{ul
+{- {!Capstone.Arch.RISCV32} - RV32}
+{- {!Capstone.Arch.RISCV64} - RV64}}
+
+Supports standard extensions (M, A, F, D, C). Note: Vector extension (RVV)
+is not yet supported in Capstone 5.x.
+
+{2 PowerPC}
+
+IBM PowerPC with endianness variants:
+
+{ul
+{- {!Capstone.Arch.PPC32} - 32-bit (big endian)}
+{- {!Capstone.Arch.PPC64} - 64-bit (big endian)}
+{- {!Capstone.Arch.PPC64LE} - 64-bit (little endian)}}
+
+Includes AltiVec/VMX and VSX vector instruction support.
+
+{2 SystemZ}
+
+IBM z/Architecture (s390x):
+
+{[
+let handle = create_exn Arch.SYSZ in
+(* ... *)
+]}
+
+{1:features Key Features}
+
+{2 Type-Safe Architecture Selection}
+
+The {!Capstone.module-Arch} module uses phantom types to ensure you can only call
+architecture-appropriate functions:
+
+{[
+(* This compiles - X86_64 is x86-compatible *)
+let h = create_exn Arch.X86_64 in
+let insns = disasm_x86_detail ~addr:0L h code
+
+(* This would NOT compile - AARCH64 is not x86-compatible *)
+(* let insns = disasm_x86_detail ~addr:0L aarch64_handle code *)
+]}
+
+{2 Runtime Mode Switching}
+
+Switch between execution modes without creating a new handle. Essential for
+analyzing code with mode transitions like ARM/Thumb interworking:
+
+{[
+let handle = create_exn Arch.ARM in
+
+(* Disassemble ARM code *)
+let arm_insns = disasm ~addr:0L handle arm_code in
+
+(* Switch to Thumb mode *)
+set_mode_arm handle Mode.Thumb;
+
+(* Disassemble Thumb code with same handle *)
+let thumb_insns = disasm ~addr:0x100L handle thumb_code
+]}
+
+{2 SKIPDATA Mode}
+
+Continue disassembly past invalid bytes instead of stopping:
+
+{[
+let handle = create_exn Arch.X86_64 in
+set_skipdata handle true;
+(* Invalid bytes become .byte pseudo-instructions *)
+
+(* Optionally customize the mnemonic *)
+set_skipdata_mnemonic handle (Some ".db")
+]}
+
+{2 Custom Mnemonics}
+
+Override instruction names for clarity or compatibility:
+
+{[
+let handle = create_exn Arch.X86_64 in
+(* Change NOP mnemonic *)
+set_mnemonic handle ~insn_id:X86_const.X86_INS_NOP (Some "nothing");
+(* Reset to default *)
+reset_mnemonic handle ~insn_id:X86_const.X86_INS_NOP
+]}
+
+{2 Register Access Tracking}
+
+Get all registers read and written by an instruction:
+
+{[
+let handle = create_exn Arch.X86_64 in
+set_detail handle true;
+let results = disasm_with_regs_access ~addr:0L handle code in
+List.iter (fun (insn, access) ->
+  Printf.printf "%s reads: %d regs, writes: %d regs\n"
+    insn.mnemonic
+    (Array.length access.regs_read)
+    (Array.length access.regs_write)
+) results
+]}
+
+{1:library Library [capstone]}
+
+The main entry point is the {!Capstone} module:
+
+{!modules: Capstone}
+
+{2:constants Architecture Constants}
+
+Generated constant modules for instruction IDs, register IDs, and groups:
+
+{!modules:
+Capstone.Cs_const
+Capstone.Aarch64_const
+Capstone.Arm_const
+Capstone.X86_const
+Capstone.Riscv_const
+Capstone.Ppc_const
+Capstone.Sysz_const
+}
+
+{2:details Instruction Details}
+
+Architecture-specific operand and detail types:
+
+{!modules:
+Capstone.Aarch64
+Capstone.Arm
+Capstone.X86
+Capstone.Riscv
+Capstone.Ppc
+Capstone.Sysz
+}
+
+{1:requirements Requirements}
+
+{ul
+{- OCaml >= 4.14}
+{- Capstone library >= 5.0 (system installation)}
+{- ctypes and ctypes-foreign}}
+
+{2 Installing Capstone}
+
+OCaml Capstone requires Capstone 5.x, which should be installed by conf_capstone package.
+Ubuntu 24.04+ ships Capstone 4.x. For version 5.x features, build from source:
+
+{[
+wget https://github.com/capstone-engine/capstone/archive/5.0.6.tar.gz
+tar xzf 5.0.6.tar.gz
+cd capstone-5.0.6
+make && sudo make install
+]}
+
+{3 From opam}
+
+{[
+opam install capstone
+]}
+
+{1:links Links}
+
+{ul
+{- {{:https://www.capstone-engine.org/}Capstone Engine website}}
+{- {{:https://github.com/capstone-engine/capstone}Capstone on GitHub}}
+{- {{:https://github.com/tmcgilchrist/capstone-ocaml}capstone-ocaml on GitHub}}}

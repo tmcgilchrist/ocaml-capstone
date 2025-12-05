@@ -97,3 +97,9 @@ let detail_of_cs_detail detail_ptr =
   let sysz_ptr = from_voidp Types.cs_sysz (to_voidp (byte_ptr +@ 96)) in
   let sysz = !@ sysz_ptr in
   detail_of_cs_sysz sysz
+
+(* Empty detail for when no detail is available *)
+let empty_detail = {
+  cc = 0;
+  operands = [||];
+}

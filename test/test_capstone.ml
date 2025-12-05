@@ -446,6 +446,85 @@ let test_skipdata_custom_mnemonic () =
     let has_db = List.exists (fun i -> i.Capstone.mnemonic = "db") insns in
     check bool "has custom mnemonic 'db'" true has_db
 
+(* Mode switching tests *)
+let test_arm_mode_switch () =
+  (* Test switching between ARM and Thumb mode at runtime *)
+  (* ARM: mov r0, r0 = 0x00 0x00 0xa0 0xe1 (4 bytes) *)
+  let arm_code = Bytes.of_string "\x00\x00\xa0\xe1" in
+  (* Thumb: nop = 0x00 0xbf (2 bytes) *)
+  let thumb_code = Bytes.of_string "\x00\xbf" in
+  match Capstone.create Capstone.Arch.ARM with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    (* Start in ARM mode *)
+    let arm_insns = Capstone.disasm ~addr:0x1000L h arm_code in
+    check int "ARM mode: instruction count" 1 (List.length arm_insns);
+    check int "ARM mode: instruction size" 4 (List.hd arm_insns).size;
+    (* Switch to Thumb mode *)
+    Capstone.set_mode_arm h Capstone.Mode.Thumb;
+    let thumb_insns = Capstone.disasm ~addr:0x2000L h thumb_code in
+    check int "Thumb mode: instruction count" 1 (List.length thumb_insns);
+    check int "Thumb mode: instruction size" 2 (List.hd thumb_insns).size;
+    (* Switch back to ARM mode *)
+    Capstone.set_mode_arm h Capstone.Mode.ARM;
+    let arm_insns2 = Capstone.disasm ~addr:0x3000L h arm_code in
+    check int "Back to ARM: instruction count" 1 (List.length arm_insns2);
+    check int "Back to ARM: instruction size" 4 (List.hd arm_insns2).size;
+    Capstone.close h
+
+let test_x86_mode_switch () =
+  (* Test switching between x86 16/32/64-bit modes *)
+  (* The same bytes can be interpreted differently in each mode *)
+  (* 0x66 0x89 0xc0 in different modes:
+     - 16-bit: mov ax, ax (but 0x66 makes it 32-bit: mov eax, eax)
+     - 32-bit: mov ax, ax (0x66 is operand size prefix)
+     - 64-bit: mov ax, ax (0x66 is operand size prefix) *)
+  let code = Bytes.of_string "\x89\xc0" in  (* mov eax, eax / mov ax, ax *)
+  match Capstone.create Capstone.Arch.X86_64 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    (* Start in 64-bit mode *)
+    let insns_64 = Capstone.disasm ~addr:0x1000L h code in
+    check int "64-bit mode: instruction count" 1 (List.length insns_64);
+    check string "64-bit mode: mnemonic" "mov" (List.hd insns_64).mnemonic;
+    (* Switch to 32-bit mode *)
+    Capstone.set_mode_x86 h Capstone.Mode.Mode_32;
+    let insns_32 = Capstone.disasm ~addr:0x2000L h code in
+    check int "32-bit mode: instruction count" 1 (List.length insns_32);
+    check string "32-bit mode: mnemonic" "mov" (List.hd insns_32).mnemonic;
+    (* Switch to 16-bit mode *)
+    Capstone.set_mode_x86 h Capstone.Mode.Mode_16;
+    let insns_16 = Capstone.disasm ~addr:0x3000L h code in
+    check int "16-bit mode: instruction count" 1 (List.length insns_16);
+    check string "16-bit mode: mnemonic" "mov" (List.hd insns_16).mnemonic;
+    Capstone.close h
+
+(* Custom mnemonic tests *)
+let test_custom_mnemonic () =
+  (* Test setting custom mnemonic for x86 NOP instruction *)
+  let code = Bytes.of_string "\x90" in  (* nop *)
+  match Capstone.create Capstone.Arch.X86_64 with
+  | Error e ->
+    fail (Printf.sprintf "Failed to create handle: %s" (Capstone.strerror e))
+  | Ok h ->
+    (* First, disassemble without custom mnemonic *)
+    let insns_default = Capstone.disasm ~addr:0x1000L h code in
+    check int "default: instruction count" 1 (List.length insns_default);
+    check string "default: mnemonic" "nop" (List.hd insns_default).mnemonic;
+    (* Set custom mnemonic for NOP (ID 510) *)
+    Capstone.set_mnemonic h ~insn_id:510 (Some "nothing");
+    let insns_custom = Capstone.disasm ~addr:0x1000L h code in
+    check int "custom: instruction count" 1 (List.length insns_custom);
+    check string "custom: mnemonic" "nothing" (List.hd insns_custom).mnemonic;
+    (* Reset to default *)
+    Capstone.reset_mnemonic h ~insn_id:510;
+    let insns_reset = Capstone.disasm ~addr:0x1000L h code in
+    check int "reset: instruction count" 1 (List.length insns_reset);
+    check string "reset: mnemonic" "nop" (List.hd insns_reset).mnemonic;
+    Capstone.close h
+
 (* ARM 32-bit tests *)
 let test_arm_basic () =
   (* nop (mov r0, r0) in ARM mode: 0x00, 0x00, 0xa0, 0xe1 (little endian) *)
@@ -565,5 +644,12 @@ let () =
     "skipdata", [
       test_case "basic skipdata" `Quick test_skipdata_basic;
       test_case "custom mnemonic" `Quick test_skipdata_custom_mnemonic;
+    ];
+    "mode_switch", [
+      test_case "ARM/Thumb switching" `Quick test_arm_mode_switch;
+      test_case "x86 16/32/64 switching" `Quick test_x86_mode_switch;
+    ];
+    "custom_mnemonic", [
+      test_case "x86 custom mnemonic" `Quick test_custom_mnemonic;
     ];
   ]

@@ -1,0 +1,119 @@
+{0 Frequently Asked Questions}
+
+{1 Does Capstone support SIMD?}
+
+Capstone supports SIMD (Single Instruction, Multiple Data) for a number of architectures, based on the underlying Capstone 5.x:
+
+{2 ARM64 (AArch64)}
+
+{b Excellent support.} ARM64 has comprehensive SIMD coverage:
+
+{ul
+{- {b NEON/AdvSIMD}: Full support for 128-bit vector operations. Instructions are identified via the [ARM64_GRP_NEON] instruction group.}
+{- {b SVE (Scalable Vector Extension)}: Supported with dedicated groups [ARM64_GRP_SVE] and [ARM64_GRP_SVE2].}
+{- {b Vector registers}: V0-V31 registers are fully decoded with proper type information.}
+{- {b Vector arrangement specifiers}: The [arm64_vas] enum provides arrangement info (8B, 16B, 4H, 8H, 2S, 4S, 1D, 2D, 1Q).}
+{- {b Element indexing}: Lane/element access is captured in operand details.}}
+
+Example NEON instruction detection:
+{[
+(* Check if instruction uses NEON *)
+let is_neon insn =
+  List.exists (fun g -> g = Aarch64_const.ARM64_GRP_NEON) insn.groups
+]}
+
+{2 x86/x86-64}
+
+{b Excellent support.} x86 has comprehensive SIMD coverage:
+
+{ul
+{- {b MMX}: 64-bit integer SIMD (legacy).}
+{- {b SSE/SSE2/SSE3/SSSE3/SSE4.1/SSE4.2}: 128-bit vector operations. Identified via instruction groups like [X86_GRP_SSE1], [X86_GRP_SSE2], etc.}
+{- {b AVX/AVX2}: 256-bit vector operations with [X86_GRP_AVX] and [X86_GRP_AVX2].}
+{- {b AVX-512}: 512-bit operations including AVX512F, AVX512BW, AVX512DQ, etc. Each variant has its own instruction group.}
+{- {b Vector registers}: XMM0-XMM15 (128-bit), YMM0-YMM15 (256-bit), ZMM0-ZMM31 (512-bit) are all decoded.}
+{- {b Broadcast/rounding}: AVX-512 broadcast modes and rounding control are captured in operand details.}
+{- {b Mask registers}: K0-K7 opmask registers for predicated operations.}}
+
+Example AVX detection:
+{[
+(* Check if instruction uses AVX *)
+let is_avx insn =
+  List.exists (fun g ->
+    g = X86_const.X86_GRP_AVX || g = X86_const.X86_GRP_AVX2
+  ) insn.groups
+]}
+
+{2 RISC-V}
+
+{b No vector support.} RISC-V Vector Extension (RVV) is {b not supported} in Capstone 5.x:
+
+{ul
+{- The RISC-V Vector Extension (V) instructions are not implemented.}
+{- Only scalar RISC-V instructions (RV32I, RV64I, M, A, F, D, C extensions) are supported.}
+{- Vector registers (v0-v31) and vector instructions (vle, vse, vadd, etc.) will not disassemble.}
+{- This is a known limitation; RVV support may be added in future Capstone versions.}}
+
+{2 ARM 32-bit}
+
+{b Good support.} ARM 32-bit includes NEON SIMD support:
+
+{ul
+{- {b NEON}: 64-bit and 128-bit vector operations using D0-D31 and Q0-Q15 registers.}
+{- {b Instruction groups}: NEON instructions identified via [ARM_GRP_NEON].}
+{- {b Vector data types}: The [arm_vectordata_type] enum provides element type info (I8, I16, I32, I64, S8, S16, S32, F32, F64, etc.).}
+{- {b Lane indexing}: Element/lane access captured in operand details via [neon_lane] field.}}
+
+Example NEON detection:
+{[
+(* Check if ARM instruction uses NEON *)
+let is_arm_neon detail =
+  Array.exists (fun g -> g = Arm_const.ARM_GRP_NEON) detail.groups
+]}
+
+{2 PowerPC}
+
+{b Good support.} PowerPC includes AltiVec and VSX vector extensions:
+
+{ul
+{- {b AltiVec/VMX}: 128-bit vector operations using V0-V31 registers.}
+{- {b VSX}: Vector-Scalar Extension with 64 VSR registers (VS0-VS63).}
+{- {b Instruction groups}: Vector instructions identified via [PPC_GRP_ALTIVEC] and related groups.}
+{- {b Vector registers}: Full decoding of VR and VSR register operands.}}
+
+Example AltiVec detection:
+{[
+(* Check if PowerPC instruction uses AltiVec *)
+let is_ppc_altivec detail =
+  Array.exists (fun g -> g = Ppc_const.PPC_GRP_ALTIVEC) detail.groups
+]}
+
+{2 SystemZ}
+
+{b Good support.} IBM z/Architecture includes Vector Facility:
+
+{ul
+{- {b Vector Facility}: 128-bit vector operations using V0-V31 registers.}
+{- {b Vector instructions}: Full support for vector load/store, arithmetic, logical, and string operations.}
+{- {b Element sizes}: 8, 16, 32, 64, and 128-bit element operations supported.}}
+
+{2 Detecting SIMD Instructions}
+
+To detect SIMD instructions in your code, check the instruction groups:
+
+{[
+let has_group groups target_group =
+  Array.exists (fun g -> g = target_group) groups
+
+(* For ARM64 *)
+let is_arm64_simd detail =
+  has_group detail.Aarch64.groups Aarch64_const.ARM64_GRP_NEON ||
+  has_group detail.Aarch64.groups Aarch64_const.ARM64_GRP_SVE
+
+(* For x86 *)
+let is_x86_simd detail =
+  has_group detail.X86.groups X86_const.X86_GRP_SSE1 ||
+  has_group detail.X86.groups X86_const.X86_GRP_AVX ||
+  has_group detail.X86.groups X86_const.X86_GRP_AVX2 ||
+  has_group detail.X86.groups X86_const.X86_GRP_AVX512F
+]}

@@ -93,3 +93,9 @@ let detail_of_cs_detail detail_ptr =
   let riscv_ptr = from_voidp Types.cs_riscv (to_voidp (byte_ptr +@ 96)) in
   let riscv = !@ riscv_ptr in
   detail_of_cs_riscv riscv
+
+(* Empty detail for when no detail is available *)
+let empty_detail = {
+  need_effective_addr = false;
+  operands = [||];
+}

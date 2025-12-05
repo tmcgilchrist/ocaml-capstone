@@ -148,3 +148,18 @@ let detail_of_cs_detail detail_ptr =
   let arm_ptr = from_voidp Types.cs_arm (to_voidp (byte_ptr +@ 96)) in
   let arm = !@ arm_ptr in
   detail_of_cs_arm arm
+
+(* Empty detail for when no detail is available *)
+let empty_detail = {
+  usermode = false;
+  vector_size = 0;
+  vector_data = 0;
+  cps_mode = 0;
+  cps_flag = 0;
+  cc = 0;
+  update_flags = false;
+  writeback = false;
+  post_index = false;
+  mem_barrier = 0;
+  operands = [||];
+}

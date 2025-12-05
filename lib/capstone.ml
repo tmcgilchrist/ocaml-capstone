@@ -1,5 +1,3 @@
-(* Capstone OCaml Bindings - Modern ctypes-based implementation *)
-
 open Ctypes
 
 module Ffi = Capstone_ffi
@@ -21,9 +19,7 @@ module Riscv = Riscv
 module Ppc = Ppc
 module Sysz = Sysz
 
-(* Error type *)
 type error =
-  | Ok
   | Mem
   | Arch
   | Handle
@@ -40,7 +36,6 @@ type error =
   | X86_masm
 
 let error_of_int = function
-  | 0 -> Ok
   | 1 -> Mem
   | 2 -> Arch
   | 3 -> Handle
@@ -55,11 +50,11 @@ let error_of_int = function
   | 12 -> X86_att
   | 13 -> X86_intel
   | 14 -> X86_masm
-  | _ -> failwith "Unknown error code"
+  | n -> failwith (Printf.sprintf "Unknown error code: %d" n)
 
 exception Capstone_error of error
 
-let () = Callback.register_exception "capstone_error" (Capstone_error Ok)
+let () = Callback.register_exception "capstone_error" (Capstone_error Mem)
 
 (* Basic instruction record - architecture independent *)
 type insn = {
@@ -132,7 +127,7 @@ type 'a t = handle
 let version () =
   let major = allocate int 0 in
   let minor = allocate int 0 in
-  let _ = Bindings.cs_version (Some major) (Some minor) in
+  let _ = Bindings.cs_version (Some major) (Some minor) in (* TODO Why is this here? *)
   (!@ major, !@ minor)
 
 (* Check if architecture is supported *)
@@ -173,12 +168,47 @@ let set_detail (handle : _ t) enabled =
   set_option handle Types.OptType.detail
     (if enabled then Types.OptValue.on else Types.OptValue.off)
 
-(* Set syntax (for x86) *)
 let set_syntax_intel (handle : _ t) =
   set_option handle Types.OptType.syntax Types.OptValue.syntax_intel
 
 let set_syntax_att (handle : _ t) =
   set_option handle Types.OptType.syntax Types.OptValue.syntax_att
+
+(* Runtime mode switching *)
+module Mode = struct
+  (* ARM modes *)
+  type arm =
+    | ARM           (* 32-bit ARM *)
+    | Thumb         (* Thumb mode *)
+    | Thumb_MClass  (* Thumb + Cortex-M *)
+    | ARMv8         (* ARMv8 A32 *)
+
+  let arm_to_int = function
+    | ARM -> Types.Mode.arm
+    | Thumb -> Types.Mode.thumb
+    | Thumb_MClass -> Types.Mode.thumb lor Types.Mode.mclass
+    | ARMv8 -> Types.Mode.arm lor Types.Mode.v8
+
+  (* x86 modes *)
+  type x86 =
+    | Mode_16  (* 16-bit real mode *)
+    | Mode_32  (* 32-bit protected mode *)
+    | Mode_64  (* 64-bit long mode *)
+
+  let x86_to_int = function
+    | Mode_16 -> Types.Mode.mode_16
+    | Mode_32 -> Types.Mode.mode_32
+    | Mode_64 -> Types.Mode.mode_64
+
+end
+
+(* Set ARM mode at runtime *)
+let set_mode_arm (handle : [> `ARM | `ARM_BE | `THUMB | `THUMB_BE | `THUMB_MCLASS | `ARMV8] t) mode =
+  set_option handle Types.OptType.mode (Mode.arm_to_int mode)
+
+(* Set x86 mode at runtime *)
+let set_mode_x86 (handle : [> `X86_16 | `X86_32 | `X86_64] t) mode =
+  set_option handle Types.OptType.mode (Mode.x86_to_int mode)
 
 (* Enable or disable SKIPDATA mode *)
 let set_skipdata (handle : _ t) enabled =
@@ -190,14 +220,12 @@ let set_skipdata (handle : _ t) enabled =
    The mnemonic string must remain valid for the lifetime of the handle.
    Pass None to use the default ".byte" mnemonic. *)
 let set_skipdata_mnemonic (handle : _ t) mnemonic =
-  (* First enable skipdata mode *)
   set_skipdata handle true;
-  (* Then configure the mnemonic if provided *)
   match mnemonic with
   | None -> ()
   | Some mnem ->
     let skipdata_setup = make Types.cs_opt_skipdata in
-    (* Convert OCaml string to C string *)
+
     let mnem_cstr = CArray.of_string mnem in
     setf skipdata_setup Types.skipdata_mnemonic (CArray.start mnem_cstr);
     setf skipdata_setup Types.skipdata_callback (Ctypes.null);
@@ -207,6 +235,26 @@ let set_skipdata_mnemonic (handle : _ t) mnemonic =
       (Unsigned.Size_t.of_int64 (Int64.of_nativeint ptr_val)) in
     if err <> Types.Err.ok then
       raise (Capstone_error (error_of_int err))
+
+(* Set custom mnemonic for a specific instruction *)
+let set_mnemonic (handle : _ t) ~insn_id mnemonic =
+  let opt_mnem = make Types.cs_opt_mnem in
+  setf opt_mnem Types.mnem_id (Unsigned.UInt32.of_int insn_id);
+  (match mnemonic with
+   | None ->
+     setf opt_mnem Types.mnem_mnemonic (Ctypes.from_voidp Ctypes.char Ctypes.null)
+   | Some mnem ->
+     let mnem_cstr = CArray.of_string mnem in
+     setf opt_mnem Types.mnem_mnemonic (CArray.start mnem_cstr));
+  let ptr_val = Ctypes.raw_address_of_ptr (Ctypes.to_voidp (addr opt_mnem)) in
+  let err = Bindings.cs_option handle.h Types.OptType.mnemonic
+    (Unsigned.Size_t.of_int64 (Int64.of_nativeint ptr_val)) in
+  if err <> Types.Err.ok then
+    raise (Capstone_error (error_of_int err))
+
+(* Reset a custom mnemonic back to default *)
+let reset_mnemonic (handle : _ t) ~insn_id =
+  set_mnemonic handle ~insn_id None
 
 (* Convert cs_insn structure to OCaml record *)
 let insn_of_cs_insn ptr =
@@ -224,7 +272,7 @@ let insn_of_cs_insn ptr =
   }
 
 (* Disassemble binary code *)
-let disasm ?(count=0) ~addr (handle : _ t) (code : bytes) : insn list =
+let disasm ?(count=0) ~addr (handle : _ t) code =
   let code_len = Bytes.length code in
   let code_ptr = allocate_n uint8_t ~count:code_len in
   for i = 0 to code_len - 1 do
@@ -268,7 +316,7 @@ let group_name (handle : _ t) group_id =
 (* Get error string *)
 let strerror err =
   let code = match err with
-    | Ok -> 0 | Mem -> 1 | Arch -> 2 | Handle -> 3 | Csh -> 4
+    | Mem -> 1 | Arch -> 2 | Handle -> 3 | Csh -> 4
     | Mode -> 5 | Option -> 6 | Detail -> 7 | Memsetup -> 8
     | Version -> 9 | Diet -> 10 | Skipdata -> 11
     | X86_att -> 12 | X86_intel -> 13 | X86_masm -> 14
@@ -290,388 +338,179 @@ let disassemble_block : type a. a Arch.t -> bytes -> addr:int64 -> (insn list, e
   fun arch code ~addr ->
     with_handle arch (fun h -> disasm ~addr h code)
 
-(* Convert cs_insn to detailed instruction for AArch64 *)
-let detailed_insn_of_cs_insn_aarch64 ptr =
+(* Sum type for architecture-specific details *)
+type arch_detail =
+  | Aarch64_detail of Aarch64.detail
+  | Arm_detail of Arm.detail
+  | X86_detail of X86.detail
+  | Riscv_detail of Riscv.detail
+  | Ppc_detail of Ppc.detail
+  | Sysz_detail of Sysz.detail
+
+(* Detailed instruction with architecture-agnostic detail *)
+type any_detailed_insn = {
+  insn : insn;
+  regs_read : int array;
+  regs_write : int array;
+  groups : int array;
+  detail : arch_detail;
+}
+
+(* Internal: convert cs_insn to any_detailed_insn based on architecture *)
+let any_detailed_insn_of_cs_insn ~arch ptr =
   let basic = insn_of_cs_insn ptr in
   let detail_opt = getf (!@ ptr) Types.insn_detail in
   match detail_opt with
   | None ->
-    (* No detail available - return empty arrays *)
+    (* No detail available - return empty detail based on arch *)
+    let detail = match arch with
+      | a when a = Types.Arch.aarch64 -> Aarch64_detail Aarch64.empty_detail
+      | a when a = Types.Arch.arm -> Arm_detail Arm.empty_detail
+      | a when a = Types.Arch.x86 -> X86_detail X86.empty_detail
+      | a when a = Types.Arch.riscv -> Riscv_detail Riscv.empty_detail
+      | a when a = Types.Arch.ppc -> Ppc_detail Ppc.empty_detail
+      | a when a = Types.Arch.sysz -> Sysz_detail Sysz.empty_detail
+      | _ -> failwith "Unsupported architecture"
+    in
     {
       insn = basic;
       regs_read = [||];
       regs_write = [||];
       groups = [||];
-      arch_detail = {
-        Aarch64.cc = 0;
-        update_flags = false;
-        writeback = false;
-        post_index = false;
-        operands = [||];
-      };
+      detail;
     }
   | Some detail_ptr ->
+    (* Use aarch64's common_detail since the layout is shared *)
     let common = Aarch64.common_detail_of_cs_detail detail_ptr in
-    let arch_detail = Aarch64.detail_of_cs_detail detail_ptr in
+    let detail = match arch with
+      | a when a = Types.Arch.aarch64 ->
+        Aarch64_detail (Aarch64.detail_of_cs_detail detail_ptr)
+      | a when a = Types.Arch.arm ->
+        Arm_detail (Arm.detail_of_cs_detail detail_ptr)
+      | a when a = Types.Arch.x86 ->
+        X86_detail (X86.detail_of_cs_detail detail_ptr)
+      | a when a = Types.Arch.riscv ->
+        Riscv_detail (Riscv.detail_of_cs_detail detail_ptr)
+      | a when a = Types.Arch.ppc ->
+        Ppc_detail (Ppc.detail_of_cs_detail detail_ptr)
+      | a when a = Types.Arch.sysz ->
+        Sysz_detail (Sysz.detail_of_cs_detail detail_ptr)
+      | _ -> failwith "Unsupported architecture"
+    in
     {
       insn = basic;
       regs_read = common.regs_read;
       regs_write = common.regs_write;
       groups = common.groups;
-      arch_detail;
+      detail;
     }
+
+(* Internal: shared disassembly implementation for detailed instructions *)
+let disasm_detail_internal ?(count=0) ~addr handle code =
+  let code_len = Bytes.length code in
+  let code_ptr = allocate_n uint8_t ~count:code_len in
+  for i = 0 to code_len - 1 do
+    (code_ptr +@ i) <-@ Unsigned.UInt8.of_int (Char.code (Bytes.get code i))
+  done;
+
+  let insn_ptr = allocate (ptr Types.cs_insn) (from_voidp Types.cs_insn null) in
+  let num_insns = Bindings.cs_disasm
+    handle.h
+    code_ptr
+    (Unsigned.Size_t.of_int code_len)
+    (Unsigned.UInt64.of_int64 addr)
+    (Unsigned.Size_t.of_int count)
+    insn_ptr
+  in
+
+  let num = Unsigned.Size_t.to_int num_insns in
+  if num = 0 then
+    []
+  else begin
+    let insns_array = !@ insn_ptr in
+    let result = List.init num (fun i ->
+      any_detailed_insn_of_cs_insn ~arch:handle.arch (insns_array +@ i)
+    ) in
+    Bindings.cs_free insns_array num_insns;
+    result
+  end
+
+(* Unified disassembly with architecture-agnostic detailed information *)
+let disasm_detail ?(count=0) ~addr handle code =
+  disasm_detail_internal ~count ~addr handle code
+
+(* Helper to convert any_detailed_insn to typed detailed_insn *)
+let to_aarch64_detail any =
+  match any.detail with
+  | Aarch64_detail d ->
+    { insn = any.insn; regs_read = any.regs_read;
+      regs_write = any.regs_write; groups = any.groups; arch_detail = d }
+  | _ -> failwith "Expected AArch64 detail"
+
+let to_arm_detail any =
+  match any.detail with
+  | Arm_detail d ->
+    { insn = any.insn; regs_read = any.regs_read;
+      regs_write = any.regs_write; groups = any.groups; arch_detail = d }
+  | _ -> failwith "Expected ARM detail"
+
+let to_x86_detail any =
+  match any.detail with
+  | X86_detail d ->
+    { insn = any.insn; regs_read = any.regs_read;
+      regs_write = any.regs_write; groups = any.groups; arch_detail = d }
+  | _ -> failwith "Expected x86 detail"
+
+let to_riscv_detail any =
+  match any.detail with
+  | Riscv_detail d ->
+    { insn = any.insn; regs_read = any.regs_read;
+      regs_write = any.regs_write; groups = any.groups; arch_detail = d }
+  | _ -> failwith "Expected RISC-V detail"
+
+let to_ppc_detail any =
+  match any.detail with
+  | Ppc_detail d ->
+    { insn = any.insn; regs_read = any.regs_read;
+      regs_write = any.regs_write; groups = any.groups; arch_detail = d }
+  | _ -> failwith "Expected PowerPC detail"
+
+let to_sysz_detail any =
+  match any.detail with
+  | Sysz_detail d ->
+    { insn = any.insn; regs_read = any.regs_read;
+      regs_write = any.regs_write; groups = any.groups; arch_detail = d }
+  | _ -> failwith "Expected SystemZ detail"
 
 (* Disassemble with detailed information (AArch64) *)
-let disasm_aarch64_detail ?(count=0) ~addr (handle : [> `AARCH64] t) (code : bytes)
-    : Aarch64.detail detailed_insn list =
-  let code_len = Bytes.length code in
-  let code_ptr = allocate_n uint8_t ~count:code_len in
-  for i = 0 to code_len - 1 do
-    (code_ptr +@ i) <-@ Unsigned.UInt8.of_int (Char.code (Bytes.get code i))
-  done;
-
-  let insn_ptr = allocate (ptr Types.cs_insn) (from_voidp Types.cs_insn null) in
-  let num_insns = Bindings.cs_disasm
-    handle.h
-    code_ptr
-    (Unsigned.Size_t.of_int code_len)
-    (Unsigned.UInt64.of_int64 addr)
-    (Unsigned.Size_t.of_int count)
-    insn_ptr
-  in
-
-  let num = Unsigned.Size_t.to_int num_insns in
-  if num = 0 then
-    []
-  else begin
-    let insns_array = !@ insn_ptr in
-    let result = List.init num (fun i ->
-      detailed_insn_of_cs_insn_aarch64 (insns_array +@ i)
-    ) in
-    Bindings.cs_free insns_array num_insns;
-    result
-  end
-
-(* Convert cs_insn to detailed instruction for x86 *)
-let detailed_insn_of_cs_insn_x86 ptr =
-  let basic = insn_of_cs_insn ptr in
-  let detail_opt = getf (!@ ptr) Types.insn_detail in
-  match detail_opt with
-  | None ->
-    (* No detail available - return empty arrays *)
-    {
-      insn = basic;
-      regs_read = [||];
-      regs_write = [||];
-      groups = [||];
-      arch_detail = {
-        X86.prefix = [|0;0;0;0|];
-        opcode = [|0;0;0;0|];
-        rex = 0;
-        addr_size = 0;
-        modrm = 0;
-        sib = 0;
-        disp = 0L;
-        sib_index = 0;
-        sib_scale = 0;
-        sib_base = 0;
-        xop_cc = 0;
-        sse_cc = 0;
-        avx_cc = 0;
-        avx_sae = false;
-        avx_rm = 0;
-        eflags = 0L;
-        operands = [||];
-      };
-    }
-  | Some detail_ptr ->
-    let common = X86.common_detail_of_cs_detail detail_ptr in
-    let arch_detail = X86.detail_of_cs_detail detail_ptr in
-    {
-      insn = basic;
-      regs_read = common.regs_read;
-      regs_write = common.regs_write;
-      groups = common.groups;
-      arch_detail;
-    }
+let disasm_aarch64_detail ?(count=0) ~addr (handle : [> `AARCH64] t) code =
+  disasm_detail_internal ~count ~addr handle code
+  |> List.map to_aarch64_detail
 
 (* Disassemble with detailed information (x86) *)
-let disasm_x86_detail ?(count=0) ~addr (handle : [> `X86_16 | `X86_32 | `X86_64] t) (code : bytes)
-    : X86.detail detailed_insn list =
-  let code_len = Bytes.length code in
-  let code_ptr = allocate_n uint8_t ~count:code_len in
-  for i = 0 to code_len - 1 do
-    (code_ptr +@ i) <-@ Unsigned.UInt8.of_int (Char.code (Bytes.get code i))
-  done;
-
-  let insn_ptr = allocate (ptr Types.cs_insn) (from_voidp Types.cs_insn null) in
-  let num_insns = Bindings.cs_disasm
-    handle.h
-    code_ptr
-    (Unsigned.Size_t.of_int code_len)
-    (Unsigned.UInt64.of_int64 addr)
-    (Unsigned.Size_t.of_int count)
-    insn_ptr
-  in
-
-  let num = Unsigned.Size_t.to_int num_insns in
-  if num = 0 then
-    []
-  else begin
-    let insns_array = !@ insn_ptr in
-    let result = List.init num (fun i ->
-      detailed_insn_of_cs_insn_x86 (insns_array +@ i)
-    ) in
-    Bindings.cs_free insns_array num_insns;
-    result
-  end
-
-(* Convert cs_insn to detailed instruction for RISC-V *)
-let detailed_insn_of_cs_insn_riscv ptr =
-  let basic = insn_of_cs_insn ptr in
-  let detail_opt = getf (!@ ptr) Types.insn_detail in
-  match detail_opt with
-  | None ->
-    (* No detail available - return empty arrays *)
-    {
-      insn = basic;
-      regs_read = [||];
-      regs_write = [||];
-      groups = [||];
-      arch_detail = {
-        Riscv.need_effective_addr = false;
-        operands = [||];
-      };
-    }
-  | Some detail_ptr ->
-    let common = Riscv.common_detail_of_cs_detail detail_ptr in
-    let arch_detail = Riscv.detail_of_cs_detail detail_ptr in
-    {
-      insn = basic;
-      regs_read = common.regs_read;
-      regs_write = common.regs_write;
-      groups = common.groups;
-      arch_detail;
-    }
+let disasm_x86_detail ?(count=0) ~addr (handle : [> `X86_16 | `X86_32 | `X86_64] t) code =
+  disasm_detail_internal ~count ~addr handle code
+  |> List.map to_x86_detail
 
 (* Disassemble with detailed information (RISC-V) *)
-let disasm_riscv_detail ?(count=0) ~addr (handle : [> `RISCV32 | `RISCV64] t) (code : bytes)
-    : Riscv.detail detailed_insn list =
-  let code_len = Bytes.length code in
-  let code_ptr = allocate_n uint8_t ~count:code_len in
-  for i = 0 to code_len - 1 do
-    (code_ptr +@ i) <-@ Unsigned.UInt8.of_int (Char.code (Bytes.get code i))
-  done;
-
-  let insn_ptr = allocate (ptr Types.cs_insn) (from_voidp Types.cs_insn null) in
-  let num_insns = Bindings.cs_disasm
-    handle.h
-    code_ptr
-    (Unsigned.Size_t.of_int code_len)
-    (Unsigned.UInt64.of_int64 addr)
-    (Unsigned.Size_t.of_int count)
-    insn_ptr
-  in
-
-  let num = Unsigned.Size_t.to_int num_insns in
-  if num = 0 then
-    []
-  else begin
-    let insns_array = !@ insn_ptr in
-    let result = List.init num (fun i ->
-      detailed_insn_of_cs_insn_riscv (insns_array +@ i)
-    ) in
-    Bindings.cs_free insns_array num_insns;
-    result
-  end
-
-(* Convert cs_insn to detailed instruction for Power *)
-let detailed_insn_of_cs_insn_ppc ptr =
-  let basic = insn_of_cs_insn ptr in
-  let detail_opt = getf (!@ ptr) Types.insn_detail in
-  match detail_opt with
-  | None ->
-    (* No detail available - return empty arrays *)
-    {
-      insn = basic;
-      regs_read = [||];
-      regs_write = [||];
-      groups = [||];
-      arch_detail = {
-        Ppc.bc = 0;
-        bh = 0;
-        update_cr0 = false;
-        operands = [||];
-      };
-    }
-  | Some detail_ptr ->
-    let common = Ppc.common_detail_of_cs_detail detail_ptr in
-    let arch_detail = Ppc.detail_of_cs_detail detail_ptr in
-    {
-      insn = basic;
-      regs_read = common.regs_read;
-      regs_write = common.regs_write;
-      groups = common.groups;
-      arch_detail;
-    }
+let disasm_riscv_detail ?(count=0) ~addr (handle : [> `RISCV32 | `RISCV64] t) code =
+  disasm_detail_internal ~count ~addr handle code
+  |> List.map to_riscv_detail
 
 (* Disassemble with detailed information (Power) *)
-let disasm_ppc_detail ?(count=0) ~addr (handle : [> `PPC32 | `PPC64 | `PPC64LE] t) (code : bytes)
-    : Ppc.detail detailed_insn list =
-  let code_len = Bytes.length code in
-  let code_ptr = allocate_n uint8_t ~count:code_len in
-  for i = 0 to code_len - 1 do
-    (code_ptr +@ i) <-@ Unsigned.UInt8.of_int (Char.code (Bytes.get code i))
-  done;
-
-  let insn_ptr = allocate (ptr Types.cs_insn) (from_voidp Types.cs_insn null) in
-  let num_insns = Bindings.cs_disasm
-    handle.h
-    code_ptr
-    (Unsigned.Size_t.of_int code_len)
-    (Unsigned.UInt64.of_int64 addr)
-    (Unsigned.Size_t.of_int count)
-    insn_ptr
-  in
-
-  let num = Unsigned.Size_t.to_int num_insns in
-  if num = 0 then
-    []
-  else begin
-    let insns_array = !@ insn_ptr in
-    let result = List.init num (fun i ->
-      detailed_insn_of_cs_insn_ppc (insns_array +@ i)
-    ) in
-    Bindings.cs_free insns_array num_insns;
-    result
-  end
-
-(* Convert cs_insn to detailed instruction for SystemZ *)
-let detailed_insn_of_cs_insn_sysz ptr =
-  let basic = insn_of_cs_insn ptr in
-  let detail_opt = getf (!@ ptr) Types.insn_detail in
-  match detail_opt with
-  | None ->
-    (* No detail available - return empty arrays *)
-    {
-      insn = basic;
-      regs_read = [||];
-      regs_write = [||];
-      groups = [||];
-      arch_detail = {
-        Sysz.cc = 0;
-        operands = [||];
-      };
-    }
-  | Some detail_ptr ->
-    let common = Sysz.common_detail_of_cs_detail detail_ptr in
-    let arch_detail = Sysz.detail_of_cs_detail detail_ptr in
-    {
-      insn = basic;
-      regs_read = common.regs_read;
-      regs_write = common.regs_write;
-      groups = common.groups;
-      arch_detail;
-    }
+let disasm_ppc_detail ?(count=0) ~addr (handle : [> `PPC32 | `PPC64 | `PPC64LE] t) code =
+  disasm_detail_internal ~count ~addr handle code
+  |> List.map to_ppc_detail
 
 (* Disassemble with detailed information (SystemZ) *)
-let disasm_sysz_detail ?(count=0) ~addr (handle : [> `SYSZ] t) (code : bytes)
-    : Sysz.detail detailed_insn list =
-  let code_len = Bytes.length code in
-  let code_ptr = allocate_n uint8_t ~count:code_len in
-  for i = 0 to code_len - 1 do
-    (code_ptr +@ i) <-@ Unsigned.UInt8.of_int (Char.code (Bytes.get code i))
-  done;
-
-  let insn_ptr = allocate (ptr Types.cs_insn) (from_voidp Types.cs_insn null) in
-  let num_insns = Bindings.cs_disasm
-    handle.h
-    code_ptr
-    (Unsigned.Size_t.of_int code_len)
-    (Unsigned.UInt64.of_int64 addr)
-    (Unsigned.Size_t.of_int count)
-    insn_ptr
-  in
-
-  let num = Unsigned.Size_t.to_int num_insns in
-  if num = 0 then
-    []
-  else begin
-    let insns_array = !@ insn_ptr in
-    let result = List.init num (fun i ->
-      detailed_insn_of_cs_insn_sysz (insns_array +@ i)
-    ) in
-    Bindings.cs_free insns_array num_insns;
-    result
-  end
-
-(* Convert cs_insn to detailed instruction for ARM *)
-let detailed_insn_of_cs_insn_arm ptr =
-  let basic = insn_of_cs_insn ptr in
-  let detail_opt = getf (!@ ptr) Types.insn_detail in
-  match detail_opt with
-  | None ->
-    (* No detail available - return empty arrays *)
-    {
-      insn = basic;
-      regs_read = [||];
-      regs_write = [||];
-      groups = [||];
-      arch_detail = {
-        Arm.usermode = false;
-        vector_size = 0;
-        vector_data = 0;
-        cps_mode = 0;
-        cps_flag = 0;
-        cc = 0;
-        update_flags = false;
-        writeback = false;
-        post_index = false;
-        mem_barrier = 0;
-        operands = [||];
-      };
-    }
-  | Some detail_ptr ->
-    let common = Arm.common_detail_of_cs_detail detail_ptr in
-    let arch_detail = Arm.detail_of_cs_detail detail_ptr in
-    {
-      insn = basic;
-      regs_read = common.regs_read;
-      regs_write = common.regs_write;
-      groups = common.groups;
-      arch_detail;
-    }
+let disasm_sysz_detail ?(count=0) ~addr (handle : [> `SYSZ] t) code =
+  disasm_detail_internal ~count ~addr handle code
+  |> List.map to_sysz_detail
 
 (* Disassemble with detailed information (ARM 32-bit) *)
-let disasm_arm_detail ?(count=0) ~addr (handle : [> `ARM | `ARM_BE | `THUMB | `THUMB_BE | `THUMB_MCLASS | `ARMV8] t) (code : bytes)
-    : Arm.detail detailed_insn list =
-  let code_len = Bytes.length code in
-  let code_ptr = allocate_n uint8_t ~count:code_len in
-  for i = 0 to code_len - 1 do
-    (code_ptr +@ i) <-@ Unsigned.UInt8.of_int (Char.code (Bytes.get code i))
-  done;
-
-  let insn_ptr = allocate (ptr Types.cs_insn) (from_voidp Types.cs_insn null) in
-  let num_insns = Bindings.cs_disasm
-    handle.h
-    code_ptr
-    (Unsigned.Size_t.of_int code_len)
-    (Unsigned.UInt64.of_int64 addr)
-    (Unsigned.Size_t.of_int count)
-    insn_ptr
-  in
-
-  let num = Unsigned.Size_t.to_int num_insns in
-  if num = 0 then
-    []
-  else begin
-    let insns_array = !@ insn_ptr in
-    let result = List.init num (fun i ->
-      detailed_insn_of_cs_insn_arm (insns_array +@ i)
-    ) in
-    Bindings.cs_free insns_array num_insns;
-    result
-  end
+let disasm_arm_detail ?(count=0) ~addr (handle : [> `ARM | `ARM_BE | `THUMB | `THUMB_BE | `THUMB_MCLASS | `ARMV8] t) code =
+  disasm_detail_internal ~count ~addr handle code
+  |> List.map to_arm_detail
 
 (* Get all registers accessed by an instruction (both explicit and implicit) *)
 type regs_access = {
@@ -680,7 +519,7 @@ type regs_access = {
 }
 
 (* Low-level function that takes a raw cs_insn pointer *)
-let regs_access_raw (handle : _ t) insn_ptr : (regs_access, error) result =
+let regs_access_raw (handle : _ t) insn_ptr =
   let regs_read = CArray.make Ctypes.uint16_t 64 in
   let regs_write = CArray.make Ctypes.uint16_t 64 in
   let read_count = allocate uint8_t (Unsigned.UInt8.of_int 0) in
@@ -707,8 +546,7 @@ let regs_access_raw (handle : _ t) insn_ptr : (regs_access, error) result =
     Result.Error (error_of_int err)
 
 (* Disassemble and get register access for each instruction *)
-let disasm_with_regs_access ?(count=0) ~addr (handle : _ t) (code : bytes)
-    : (insn * regs_access) list =
+let disasm_with_regs_access ?(count=0) ~addr (handle : _ t) code =
   let code_len = Bytes.length code in
   let code_ptr = allocate_n uint8_t ~count:code_len in
   for i = 0 to code_len - 1 do

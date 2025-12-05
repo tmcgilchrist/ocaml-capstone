@@ -108,3 +108,11 @@ let detail_of_cs_detail detail_ptr =
   let ppc_ptr = from_voidp Types.cs_ppc (to_voidp (byte_ptr +@ 96)) in
   let ppc = !@ ppc_ptr in
   detail_of_cs_ppc ppc
+
+(* Empty detail for when no detail is available *)
+let empty_detail = {
+  bc = 0;
+  bh = 0;
+  update_cr0 = false;
+  operands = [||];
+}

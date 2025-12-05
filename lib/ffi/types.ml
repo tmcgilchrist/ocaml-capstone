@@ -74,6 +74,13 @@ let skipdata_callback = field cs_opt_skipdata "callback" (ptr void)  (* function
 let skipdata_user_data = field cs_opt_skipdata "user_data" (ptr void)
 let () = seal cs_opt_skipdata
 
+(* cs_opt_mnem structure for custom mnemonic setup *)
+type cs_opt_mnem
+let cs_opt_mnem : cs_opt_mnem structure typ = structure "cs_opt_mnem"
+let mnem_id = field cs_opt_mnem "id" uint32_t       (* instruction ID *)
+let mnem_mnemonic = field cs_opt_mnem "mnemonic" (ptr char)  (* custom mnemonic, NULL to reset *)
+let () = seal cs_opt_mnem
+
 (* Error codes *)
 module Err = struct
   let ok = 0
