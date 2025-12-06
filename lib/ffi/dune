@@ -1,7 +1,7 @@
 (library
  (name capstone_ffi)
  (public_name capstone.ffi)
- (modules types bindings aarch64_types arm_types x86_types riscv_types ppc_types sysz_types)
+ (modules types bindings aarch64_types arm_types x86_types riscv_types ppc_types sysz_types sparc_types mips_types m680x_types m68k_types)
  (libraries ctypes ctypes-foreign)
  (foreign_stubs
   (language c)

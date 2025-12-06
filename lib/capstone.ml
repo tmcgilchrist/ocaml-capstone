@@ -12,12 +12,20 @@ module X86_const = X86_const
 module Riscv_const = Riscv_const
 module Ppc_const = Ppc_const
 module Sysz_const = Sysz_const
+module Sparc_const = Sparc_const
+module Mips_const = Mips_const
+module M680x_const = M680x_const
+module M68k_const = M68k_const
 module Aarch64 = Aarch64
 module Arm = Arm
 module X86 = X86
 module Riscv = Riscv
 module Ppc = Ppc
 module Sysz = Sysz
+module Sparc = Sparc
+module Mips = Mips
+module M680x = M680x
+module M68k = M68k
 
 type error =
   | Mem
@@ -100,6 +108,28 @@ module Arch = struct
     | PPC64 : [> `PPC64 ] t
     | PPC64LE : [> `PPC64LE ] t
     | SYSZ : [> `SYSZ ] t
+    | SPARC : [> `SPARC ] t
+    | SPARC64 : [> `SPARC64 ] t
+    | MIPS32 : [> `MIPS32 ] t
+    | MIPS64 : [> `MIPS64 ] t
+    | MIPS32_BE : [> `MIPS32_BE ] t
+    | MIPS64_BE : [> `MIPS64_BE ] t
+    | M680X_6301 : [> `M680X_6301 ] t
+    | M680X_6309 : [> `M680X_6309 ] t
+    | M680X_6800 : [> `M680X_6800 ] t
+    | M680X_6801 : [> `M680X_6801 ] t
+    | M680X_6805 : [> `M680X_6805 ] t
+    | M680X_6808 : [> `M680X_6808 ] t
+    | M680X_6809 : [> `M680X_6809 ] t
+    | M680X_6811 : [> `M680X_6811 ] t
+    | M680X_CPU12 : [> `M680X_CPU12 ] t
+    | M680X_HCS08 : [> `M680X_HCS08 ] t
+    | M68K_000 : [> `M68K_000 ] t
+    | M68K_010 : [> `M68K_010 ] t
+    | M68K_020 : [> `M68K_020 ] t
+    | M68K_030 : [> `M68K_030 ] t
+    | M68K_040 : [> `M68K_040 ] t
+    | M68K_060 : [> `M68K_060 ] t
 
   let to_arch_mode : type a. a t -> int * int = function
     | AARCH64 -> (Types.Arch.aarch64, Types.Mode.little_endian)
@@ -118,6 +148,28 @@ module Arch = struct
     | PPC64 -> (Types.Arch.ppc, Types.Mode.ppc64 lor Types.Mode.big_endian)
     | PPC64LE -> (Types.Arch.ppc, Types.Mode.ppc64)
     | SYSZ -> (Types.Arch.sysz, Types.Mode.big_endian)
+    | SPARC -> (Types.Arch.sparc, Types.Mode.big_endian)
+    | SPARC64 -> (Types.Arch.sparc, Types.Mode.sparc_v9 lor Types.Mode.big_endian)
+    | MIPS32 -> (Types.Arch.mips, Types.Mode.mips32)
+    | MIPS64 -> (Types.Arch.mips, Types.Mode.mips64)
+    | MIPS32_BE -> (Types.Arch.mips, Types.Mode.mips32 lor Types.Mode.big_endian)
+    | MIPS64_BE -> (Types.Arch.mips, Types.Mode.mips64 lor Types.Mode.big_endian)
+    | M680X_6301 -> (Types.Arch.m680x, Types.Mode.m680x_6301)
+    | M680X_6309 -> (Types.Arch.m680x, Types.Mode.m680x_6309)
+    | M680X_6800 -> (Types.Arch.m680x, Types.Mode.m680x_6800)
+    | M680X_6801 -> (Types.Arch.m680x, Types.Mode.m680x_6801)
+    | M680X_6805 -> (Types.Arch.m680x, Types.Mode.m680x_6805)
+    | M680X_6808 -> (Types.Arch.m680x, Types.Mode.m680x_6808)
+    | M680X_6809 -> (Types.Arch.m680x, Types.Mode.m680x_6809)
+    | M680X_6811 -> (Types.Arch.m680x, Types.Mode.m680x_6811)
+    | M680X_CPU12 -> (Types.Arch.m680x, Types.Mode.m680x_cpu12)
+    | M680X_HCS08 -> (Types.Arch.m680x, Types.Mode.m680x_hcs08)
+    | M68K_000 -> (Types.Arch.m68k, Types.Mode.m68k_000)
+    | M68K_010 -> (Types.Arch.m68k, Types.Mode.m68k_010)
+    | M68K_020 -> (Types.Arch.m68k, Types.Mode.m68k_020)
+    | M68K_030 -> (Types.Arch.m68k, Types.Mode.m68k_030)
+    | M68K_040 -> (Types.Arch.m68k, Types.Mode.m68k_040)
+    | M68K_060 -> (Types.Arch.m68k, Types.Mode.m68k_060)
 end
 
 (* Disassembler type with phantom type for architecture *)
@@ -346,6 +398,10 @@ type arch_detail =
   | Riscv_detail of Riscv.detail
   | Ppc_detail of Ppc.detail
   | Sysz_detail of Sysz.detail
+  | Sparc_detail of Sparc.detail
+  | Mips_detail of Mips.detail
+  | M680x_detail of M680x.detail
+  | M68k_detail of M68k.detail
 
 (* Detailed instruction with architecture-agnostic detail *)
 type any_detailed_insn = {
@@ -370,6 +426,10 @@ let any_detailed_insn_of_cs_insn ~arch ptr =
       | a when a = Types.Arch.riscv -> Riscv_detail Riscv.empty_detail
       | a when a = Types.Arch.ppc -> Ppc_detail Ppc.empty_detail
       | a when a = Types.Arch.sysz -> Sysz_detail Sysz.empty_detail
+      | a when a = Types.Arch.sparc -> Sparc_detail Sparc.empty_detail
+      | a when a = Types.Arch.mips -> Mips_detail Mips.empty_detail
+      | a when a = Types.Arch.m680x -> M680x_detail M680x.empty_detail
+      | a when a = Types.Arch.m68k -> M68k_detail M68k.empty_detail
       | _ -> failwith "Unsupported architecture"
     in
     {
@@ -395,6 +455,14 @@ let any_detailed_insn_of_cs_insn ~arch ptr =
         Ppc_detail (Ppc.detail_of_cs_detail detail_ptr)
       | a when a = Types.Arch.sysz ->
         Sysz_detail (Sysz.detail_of_cs_detail detail_ptr)
+      | a when a = Types.Arch.sparc ->
+        Sparc_detail (Sparc.detail_of_cs_detail detail_ptr)
+      | a when a = Types.Arch.mips ->
+        Mips_detail (Mips.detail_of_cs_detail detail_ptr)
+      | a when a = Types.Arch.m680x ->
+        M680x_detail (M680x.detail_of_cs_detail detail_ptr)
+      | a when a = Types.Arch.m68k ->
+        M68k_detail (M68k.detail_of_cs_detail detail_ptr)
       | _ -> failwith "Unsupported architecture"
     in
     {
@@ -482,6 +550,34 @@ let to_sysz_detail any =
       regs_write = any.regs_write; groups = any.groups; arch_detail = d }
   | _ -> failwith "Expected SystemZ detail"
 
+let to_sparc_detail any =
+  match any.detail with
+  | Sparc_detail d ->
+    { insn = any.insn; regs_read = any.regs_read;
+      regs_write = any.regs_write; groups = any.groups; arch_detail = d }
+  | _ -> failwith "Expected SPARC detail"
+
+let to_mips_detail any =
+  match any.detail with
+  | Mips_detail d ->
+    { insn = any.insn; regs_read = any.regs_read;
+      regs_write = any.regs_write; groups = any.groups; arch_detail = d }
+  | _ -> failwith "Expected MIPS detail"
+
+let to_m680x_detail any =
+  match any.detail with
+  | M680x_detail d ->
+    { insn = any.insn; regs_read = any.regs_read;
+      regs_write = any.regs_write; groups = any.groups; arch_detail = d }
+  | _ -> failwith "Expected M680X detail"
+
+let to_m68k_detail any =
+  match any.detail with
+  | M68k_detail d ->
+    { insn = any.insn; regs_read = any.regs_read;
+      regs_write = any.regs_write; groups = any.groups; arch_detail = d }
+  | _ -> failwith "Expected M68K detail"
+
 (* Disassemble with detailed information (AArch64) *)
 let disasm_aarch64_detail ?(count=0) ~addr (handle : [> `AARCH64] t) code =
   disasm_detail_internal ~count ~addr handle code
@@ -511,6 +607,26 @@ let disasm_sysz_detail ?(count=0) ~addr (handle : [> `SYSZ] t) code =
 let disasm_arm_detail ?(count=0) ~addr (handle : [> `ARM | `ARM_BE | `THUMB | `THUMB_BE | `THUMB_MCLASS | `ARMV8] t) code =
   disasm_detail_internal ~count ~addr handle code
   |> List.map to_arm_detail
+
+(* Disassemble with detailed information (SPARC) *)
+let disasm_sparc_detail ?(count=0) ~addr (handle : [> `SPARC | `SPARC64] t) code =
+  disasm_detail_internal ~count ~addr handle code
+  |> List.map to_sparc_detail
+
+(* Disassemble with detailed information (MIPS) *)
+let disasm_mips_detail ?(count=0) ~addr (handle : [> `MIPS32 | `MIPS64 | `MIPS32_BE | `MIPS64_BE] t) code =
+  disasm_detail_internal ~count ~addr handle code
+  |> List.map to_mips_detail
+
+(* Disassemble with detailed information (M680X) *)
+let disasm_m680x_detail ?(count=0) ~addr (handle : [> `M680X_6301 | `M680X_6309 | `M680X_6800 | `M680X_6801 | `M680X_6805 | `M680X_6808 | `M680X_6809 | `M680X_6811 | `M680X_CPU12 | `M680X_HCS08] t) code =
+  disasm_detail_internal ~count ~addr handle code
+  |> List.map to_m680x_detail
+
+(* Disassemble with detailed information (M68K) *)
+let disasm_m68k_detail ?(count=0) ~addr (handle : [> `M68K_000 | `M68K_010 | `M68K_020 | `M68K_030 | `M68K_040 | `M68K_060] t) code =
+  disasm_detail_internal ~count ~addr handle code
+  |> List.map to_m68k_detail
 
 (* Get all registers accessed by an instruction (both explicit and implicit) *)
 type regs_access = {
